@@ -1,6 +1,7 @@
 # The two platforms the engine runs on today, each guarded by its own tests: macOS (Metal, Apple's readers —
 # the Mac's side of the split) and Linux (CPU, its own readers). The model is cached for the reference-vector
-# test; everything else builds from the checkout.
+# test; everything else builds from the checkout. A failing test's first errors are re-printed as workflow
+# annotations, where they can be read without the logs.
 name: tests
 
 on:
@@ -27,16 +28,22 @@ jobs:
           path: ~/Library/Application Support/DigUp/Models
       - name: The model, fetched when the cache missed
         run: |
-          cd "$HOME/Library/Application Support/DigUp/Models" 2>/dev/null || {
-            mkdir -p "$HOME/Library/Application Support/DigUp/Models"
-            cd "$HOME/Library/Application Support/DigUp/Models"
-          }
+          mkdir -p "$HOME/Library/Application Support/DigUp/Models"
+          cd "$HOME/Library/Application Support/DigUp/Models"
           for file in embeddinggemma-2-Q8_0.gguf mmproj-embeddinggemma-2-Q8_0.gguf; do
             [ -f "$file" ] || curl -sfL -o "$file" \
               "https://huggingface.co/ggml-org/embeddinggemma-2-GGUF/resolve/bfcd298762cc34d0357ece5ebdd31791a3a374d8/$file"
           done
       - name: Test
-        run: swift test
+        run: |
+          swift test 2>&1 | tee /tmp/test.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" != "0" ]; then
+            grep -E "error:|✘|Test run with" /tmp/test.log | sed -n '1,30p' | while IFS= read -r line; do
+              echo "::error::${line:0:220}"
+            done
+            exit "$status"
+          fi
 
   linux:
     name: Linux (CPU, its own readers)
@@ -48,7 +55,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             cmake ffmpeg libavformat-dev libavcodec-dev libavutil-dev libswscale-dev libswresample-dev \
-            libarchive-dev libheif-dev libexif-dev \
+            libarchive-dev libheif-dev libheif-examples libheif-plugin-x265 libheif-plugin-libde265 libheif-plugin-dav1d libexif-dev libsqlite3-dev \
             libtesseract-dev tesseract-ocr tesseract-ocr-eng tesseract-ocr-fra
       - name: Swift 6.4
         run: |
@@ -60,4 +67,12 @@ jobs:
       - name: llama.cpp, CPU
         run: scripts/build-llama.sh
       - name: Test
-        run: swift test
+        run: |
+          swift test 2>&1 | tee /tmp/test.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" != "0" ]; then
+            grep -E "error:|✘|Test run with" /tmp/test.log | sed -n '1,30p' | while IFS= read -r line; do
+              echo "::error::${line:0:220}"
+            done
+            exit "$status"
+          fi

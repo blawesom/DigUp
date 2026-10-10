@@ -79,15 +79,23 @@ targets += [
 ]
 #endif
 
+var packageDependencies: [PackageDescription.Package.Dependency] = []
+#if os(macOS)
+packageDependencies.append(
+    // In-app updates (the app only). build.sh embeds the framework in Contents/Frameworks and signs it. Linux
+    // doesn't declare it: SwiftPM would download and validate the binary archive there anyway.
+    .package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.10.0")
+)
+#endif
+packageDependencies.append(
+    // SHA-256 (CryptoKit behind it on macOS), for the model files.
+    .package(url: "https://github.com/apple/swift-crypto", from: "3.0.0")
+)
+
 let package = Package(
     name: "DigUp",
     platforms: [.macOS(.v14)],
     products: products,
-    dependencies: [
-        // In-app updates (the app only). build.sh embeds the framework in Contents/Frameworks and signs it.
-        .package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.10.0"),
-        // SHA-256 (CryptoKit behind it on macOS), for the model files.
-        .package(url: "https://github.com/apple/swift-crypto", from: "3.0.0"),
-    ],
+    dependencies: packageDependencies,
     targets: targets
 )

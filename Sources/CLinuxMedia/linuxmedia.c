@@ -223,13 +223,13 @@ static uint8_t *resized_rgb(const uint8_t *plane, int stride, int source_w, int 
 }
 
 int digup_heif_dimensions(const char *path, int *width, int *height) {
-    heif_context *context = heif_context_alloc();
+    struct heif_context *context = heif_context_alloc();
     if (!context) return -1;
     if (heif_context_read_from_file(context, path, NULL).code != heif_error_Ok) {
         heif_context_free(context);
         return -1;
     }
-    heif_image_handle *handle = NULL;
+    struct heif_image_handle *handle = NULL;
     if (heif_context_get_primary_image_handle(context, &handle).code != heif_error_Ok) {
         heif_context_free(context);
         return -1;
@@ -242,18 +242,18 @@ int digup_heif_dimensions(const char *path, int *width, int *height) {
 }
 
 int digup_decode_heif(const char *path, int max_pixel, uint8_t **out_pixels, int *width, int *height) {
-    heif_context *context = heif_context_alloc();
+    struct heif_context *context = heif_context_alloc();
     if (!context) return -1;
     if (heif_context_read_from_file(context, path, NULL).code != heif_error_Ok) {
         heif_context_free(context);
         return -1;
     }
-    heif_image_handle *handle = NULL;
+    struct heif_image_handle *handle = NULL;
     if (heif_context_get_primary_image_handle(context, &handle).code != heif_error_Ok) {
         heif_context_free(context);
         return -1;
     }
-    heif_image *image = NULL;
+    struct heif_image *image = NULL;
     if (heif_decode_image(handle, &image, heif_colorspace_RGB, heif_chroma_interleaved_RGB, NULL).code
         != heif_error_Ok) {
         heif_image_handle_release(handle);
@@ -485,7 +485,7 @@ int digup_audio_windows(const char *path, double window, double hop, double mini
                 if (!converted) { failed = 1; break; }
                 uint8_t *out_plane = (uint8_t *)converted;
                 const int made = swr_convert(resampler, &out_plane, out_samples,
-                                             (const uint8_t *const *)frame->extended_data, frame->nb_samples);
+                                             (const uint8_t **)(void *)frame->extended_data, frame->nb_samples);
                 if (made > 0) take_samples(&buffer, &buffer_count, &buffer_capacity, converted, (size_t)made,
                                             &offset, window_samples, hop_samples, folder, &pieces);
             }
@@ -504,7 +504,7 @@ int digup_audio_windows(const char *path, double window, double hop, double mini
         if (!converted) break;
         uint8_t *out_plane = (uint8_t *)converted;
         const int made = swr_convert(resampler, &out_plane, out_samples,
-                                     (const uint8_t *const *)frame->extended_data, frame->nb_samples);
+                                     (const uint8_t **)(void *)frame->extended_data, frame->nb_samples);
         if (made > 0) take_samples(&buffer, &buffer_count, &buffer_capacity, converted, (size_t)made,
                                    &offset, window_samples, hop_samples, folder, &pieces);
     }
