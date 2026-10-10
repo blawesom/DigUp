@@ -27,10 +27,11 @@ targets += [
     // libexif, stb_image_write, tesseract — the C side in CLinuxMedia), with the rest of `Readers.linux` to follow.
     .systemLibrary(name: "CLibArchive", path: "Sources/CLibArchive"),
     .target(name: "CLinuxMedia",
-            linkerSettings: [.unsafeFlags(["-lavformat", "-lavcodec", "-lavutil", "-lswscale",
+            linkerSettings: [.unsafeFlags(["-lavformat", "-lavcodec", "-lavutil", "-lswscale", "-lswresample",
                                            "-lheif", "-lexif", "-ltesseract"])]),
     .target(name: "DigUpLinuxReaders", dependencies: ["DigUpCore", "CLibArchive", "CLinuxMedia"]),
-    .testTarget(name: "LinuxReadersTests", dependencies: ["DigUpLinuxReaders", "CLinuxMedia"]),
+    .testTarget(name: "LinuxReadersTests", dependencies: ["DigUpLinuxReaders", "CLinuxMedia"],
+                resources: [.copy("Reference")]),
 ]
 #endif
 

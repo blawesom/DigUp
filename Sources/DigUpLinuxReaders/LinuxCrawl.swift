@@ -24,6 +24,8 @@ extension Rules {
             return .index(.doc)
         }
         if imageExtensions.contains(ext) { return .index(isScreenshot(url) ? .screenshot : .image) }
+        if audioExtensions.contains(ext) { return .index(.audio) }
+        if movieExtensions.contains(ext) { return .index(.video) }
         if codeExtensions.contains(ext) { return options.includeCode ? .index(.doc) : .skip("code or data file") }
         return .ignore
     }
@@ -31,6 +33,14 @@ extension Rules {
     /// What ffmpeg decodes as a still image, and libheif besides (a phone's HEIC and AVIF photos).
     static let imageExtensions: Set<String> = [
         "jpg", "jpeg", "jfif", "png", "webp", "gif", "bmp", "tif", "tiff", "heic", "heif", "avif",
+    ]
+
+    /// Sound and moving pictures, by extension (a .ts that is really TypeScript stays a document above).
+    static let audioExtensions: Set<String> = [
+        "mp3", "m4a", "m4b", "aac", "wav", "flac", "ogg", "oga", "opus", "wma", "aiff", "aif", "mka", "amr",
+    ]
+    static let movieExtensions: Set<String> = [
+        "mp4", "m4v", "mov", "mkv", "webm", "avi", "mpg", "mpeg", "wmv", "flv", "3gp", "mts", "m2ts",
     ]
 }
 

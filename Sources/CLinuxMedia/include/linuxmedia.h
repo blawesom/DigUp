@@ -37,6 +37,32 @@ int digup_write_png(const char *path, const uint8_t *rgb, int width, int height)
 // -1 when tesseract's data isn't installed (no words are read, as Vision reads none in a language it lacks).
 int digup_ocr(const uint8_t *rgb, int width, int height, char **out_text);
 
+// MARK: audio and video
+
+/// One window of sound (or one keyframe): a file written into the scratch folder, and when it plays.
+/// `path` is malloc'd; free the whole array with `digup_free_pieces`.
+typedef struct {
+    char *path;
+    double start;
+    double end;
+} DigupMediaPiece;
+
+void digup_free_pieces(DigupMediaPiece *pieces, int count);
+
+/// Audio decoded to 16 kHz mono, cut into `window`-second WAV pieces every `hop` seconds (streaming: one window
+/// in memory whatever the length), silence at −50 dBFS or quieter skipped, and a tail beyond the last window's
+/// overlap kept when it holds `minimum` seconds or more (as the Mac's reader cuts them). A file with no audio
+/// track succeeds with no pieces; -1 only when it can't be read at all.
+int digup_audio_windows(const char *path, double window, double hop, double minimum, const char *folder,
+                         DigupMediaPiece **out_pieces, int *out_count, double *out_duration);
+
+/// A video's keyframes: one sampled every `interval` seconds (at most `duration` / `max_frames` apart to bound
+/// the count), each compared with the last kept one by an 8×8 average hash — within 4 bits only extends it, as
+/// the Mac's reader dedups shots — written as JPEGs at most `max_pixel` on their longest side, turned the way
+/// the video's rotation says. A file with no video track succeeds with no pieces.
+int digup_video_keyframes(const char *path, double every, int max_pixel, int max_frames, const char *folder,
+                          DigupMediaPiece **out_pieces, int *out_count, double *out_duration, int *out_has_audio);
+
 #ifdef __cplusplus
 }
 #endif

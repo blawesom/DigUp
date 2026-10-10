@@ -9,6 +9,8 @@
 #include <libavformat/avformat.h>
 #include <libavcodec/avcodec.h>
 #include <libswscale/swscale.h>
+#include <libswresample/swresample.h>
+#include <libavutil/display.h>
 
 #include <libheif/heif.h>
 
@@ -316,4 +318,373 @@ int digup_ocr(const uint8_t *rgb, int width, int height, char **out_text) {
     *out_text = strdup(read);
     TessDeleteText(read);
     return *out_text ? 0 : -1;
+}
+
+// MARK: audio and video
+
+static void free_pieces(DigupMediaPiece *pieces, int count) {
+    if (!pieces) return;
+    for (int i = 0; i < count; i++) free(pieces[i].path);
+    free(pieces);
+}
+
+void digup_free_pieces(DigupMediaPiece *pieces, int count) { free_pieces(pieces, count); }
+
+/// A fresh name in `folder`, the way the Mac's extractors name their scratch files.
+static char *scratch_name(const char *folder, const char *extension) {
+    uint8_t random[16];
+    FILE *urandom = fopen("/dev/urandom", "rb");
+    if (!urandom || fread(random, 1, sizeof(random), urandom) != sizeof(random)) {
+        for (size_t i = 0; i < sizeof(random); i++) random[i] = (uint8_t)rand();
+    }
+    if (urandom) fclose(urandom);
+    char hex[33];
+    for (size_t i = 0; i < sizeof(random); i++) snprintf(hex + i * 2, 3, "%02x", random[i]);
+    char *out = malloc(strlen(folder) + 48);
+    if (out) snprintf(out, strlen(folder) + 48, "%s/%s.%s", folder, hex, extension);
+    return out;
+}
+
+static int write_wav(const char *path, const int16_t *samples, int count) {
+    FILE *file = fopen(path, "wb");
+    if (!file) return -1;
+    const uint32_t data_bytes = (uint32_t)(count * 2), rate = 16000;
+    const uint16_t one = 1, two = 2, sixteen = 16;
+    fwrite("RIFF", 1, 4, file);
+    uint32_t riff = 36 + data_bytes; fwrite(&riff, 4, 1, file);
+    fwrite("WAVE", 1, 4, file);
+    fwrite("fmt ", 1, 4, file);
+    uint32_t sixteen2 = 16; fwrite(&sixteen2, 4, 1, file);
+    fwrite(&one, 2, 1, file); fwrite(&one, 2, 1, file);          // PCM, one channel
+    fwrite(&rate, 4, 1, file);
+    uint32_t byte_rate = rate * 2; fwrite(&byte_rate, 4, 1, file);
+    fwrite(&two, 2, 1, file); fwrite(&sixteen, 2, 1, file);      // two bytes a sample, 16 bits
+    fwrite("data", 1, 4, file);
+    fwrite(&data_bytes, 4, 1, file);
+    fwrite(samples, 2, count, file);
+    fclose(file);
+    return 0;
+}
+
+typedef struct {
+    DigupMediaPiece *items;
+    int count, capacity;
+} PieceList;
+
+static void pieces_add(PieceList *list, char *path, double start, double end) {
+    if (list->count == list->capacity) {
+        list->capacity = list->capacity ? list->capacity * 2 : 8;
+        list->items = realloc(list->items, (size_t)list->capacity * sizeof(DigupMediaPiece));
+    }
+    list->items[list->count].path = path;
+    list->items[list->count].start = start;
+    list->items[list->count].end = end;
+    list->count++;
+}
+
+/// Writes buffer[0 ..< count] out as a piece when it isn't silence (≈ −50 dBFS or quieter isn't worth a
+/// vector); the window is consumed either way.
+static void emit_window(const int16_t *buffer, size_t count, long long offset, const char *folder,
+                        PieceList *pieces) {
+    double sum = 0;
+    for (size_t i = 0; i < count; i++) {
+        const double value = (double)buffer[i] / 32768;
+        sum += value * value;
+    }
+    if (count > 0 && (sum / (double)count) > 0.003 * 0.003) {
+        char *name = scratch_name(folder, "wav");
+        if (name && write_wav(name, buffer, (int)count) == 0) {
+            pieces_add(pieces, name, (double)offset / 16000, (double)(offset + (long long)count) / 16000);
+        } else {
+            free(name);
+        }
+    }
+}
+
+/// Appends converted samples to the window buffer and cuts what fills a window, as the Mac's reader streams them.
+static void take_samples(int16_t **buffer, size_t *buffer_count, size_t *buffer_capacity, const int16_t *samples,
+                         size_t made, long long *offset, int window_samples, int hop_samples,
+                         const char *folder, PieceList *pieces) {
+    if (*buffer_count + made > *buffer_capacity) {
+        *buffer_capacity = (*buffer_count + made) * 2;
+        *buffer = realloc(*buffer, *buffer_capacity * 2);
+    }
+    if (!*buffer) return;
+    memcpy(*buffer + *buffer_count, samples, made * 2);
+    *buffer_count += made;
+    while (*buffer_count >= (size_t)window_samples) {
+        emit_window(*buffer, (size_t)window_samples, *offset, folder, pieces);
+        *buffer_count -= (size_t)hop_samples;
+        memmove(*buffer, *buffer + hop_samples, *buffer_count * 2);
+        *offset += hop_samples;
+    }
+}
+
+/// The index of the first stream of `type`, or -1.
+static int stream_of_type(AVFormatContext *format, enum AVMediaType type) {
+    for (unsigned int index = 0; index < format->nb_streams; index++) {
+        if (format->streams[index]->codecpar->codec_type == type) return (int)index;
+    }
+    return -1;
+}
+
+int digup_audio_windows(const char *path, double window, double hop, double minimum, const char *folder,
+                        DigupMediaPiece **out_pieces, int *out_count, double *out_duration) {
+    *out_pieces = NULL;
+    *out_count = 0;
+    *out_duration = 0;
+    AVFormatContext *format = NULL;
+    if (avformat_open_input(&format, path, NULL, NULL) != 0) return -1;
+    if (avformat_find_stream_info(format, NULL) < 0) {
+        avformat_close_input(&format);
+        return -1;
+    }
+    const int audio_index = stream_of_type(format, AVMEDIA_TYPE_AUDIO);
+    double duration = format->duration != AV_NOPTS_VALUE ? (double)format->duration / AV_TIME_BASE : 0;
+    if (audio_index < 0) {   // nothing to read, which is a fine answer (a video with no soundtrack)
+        avformat_close_input(&format);
+        *out_duration = duration;
+        return 0;
+    }
+    AVCodecContext *decoder = open_decoder(format->streams[audio_index]);
+    if (!decoder) {
+        avformat_close_input(&format);
+        return -1;
+    }
+    if (decoder->ch_layout.nb_channels == 0) av_channel_layout_default(&decoder->ch_layout, 1);
+    AVChannelLayout mono = AV_CHANNEL_LAYOUT_MONO;
+    SwrContext *resampler = NULL;
+    if (swr_alloc_set_opts2(&resampler, &mono, AV_SAMPLE_FMT_S16, 16000, &decoder->ch_layout,
+                            decoder->sample_fmt, decoder->sample_rate, 0, NULL) < 0 || !resampler) {
+        avcodec_free_context(&decoder);
+        avformat_close_input(&format);
+        return -1;
+    }
+    swr_init(resampler);
+
+    const int window_samples = (int)(window * 16000), hop_samples = (int)(hop * 16000);
+    int16_t *buffer = NULL;
+    size_t buffer_count = 0, buffer_capacity = 0;
+    long long offset = 0;   // sample index of buffer[0] in the file
+    PieceList pieces = {0};
+    int failed = 0;
+
+    AVPacket *packet = av_packet_alloc();
+    AVFrame *frame = av_frame_alloc();
+    int16_t *converted = NULL;
+    size_t converted_capacity = 0;
+    while (!failed && av_read_frame(format, packet) >= 0) {
+        if (packet->stream_index == audio_index && avcodec_send_packet(decoder, packet) >= 0) {
+            while (avcodec_receive_frame(decoder, frame) >= 0) {
+                const int out_samples = swr_get_out_samples(resampler, frame->nb_samples);
+                if (out_samples <= 0) continue;
+                if ((size_t)out_samples > converted_capacity) {
+                    converted = realloc(converted, (size_t)out_samples * 2);
+                    converted_capacity = out_samples;
+                }
+                if (!converted) { failed = 1; break; }
+                uint8_t *out_plane = (uint8_t *)converted;
+                const int made = swr_convert(resampler, &out_plane, out_samples,
+                                             (const uint8_t *const *)frame->extended_data, frame->nb_samples);
+                if (made > 0) take_samples(&buffer, &buffer_count, &buffer_capacity, converted, (size_t)made,
+                                            &offset, window_samples, hop_samples, folder, &pieces);
+            }
+        }
+        av_packet_unref(packet);
+    }
+    // What the decoder still holds, and what swresample kept back
+    avcodec_send_packet(decoder, NULL);
+    while (avcodec_receive_frame(decoder, frame) >= 0) {
+        const int out_samples = swr_get_out_samples(resampler, frame->nb_samples);
+        if (out_samples <= 0) continue;
+        if ((size_t)out_samples > converted_capacity) {
+            converted = realloc(converted, (size_t)out_samples * 2);
+            converted_capacity = out_samples;
+        }
+        if (!converted) break;
+        uint8_t *out_plane = (uint8_t *)converted;
+        const int made = swr_convert(resampler, &out_plane, out_samples,
+                                     (const uint8_t *const *)frame->extended_data, frame->nb_samples);
+        if (made > 0) take_samples(&buffer, &buffer_count, &buffer_capacity, converted, (size_t)made,
+                                   &offset, window_samples, hop_samples, folder, &pieces);
+    }
+    if (converted) {
+        uint8_t *out_plane = (uint8_t *)converted;
+        const int made = swr_convert(resampler, &out_plane, (int)converted_capacity, NULL, 0);
+        if (made > 0) take_samples(&buffer, &buffer_count, &buffer_capacity, converted, (size_t)made,
+                                   &offset, window_samples, hop_samples, folder, &pieces);
+    }
+    // The tail: new audio beyond the previous window's overlap, or the whole file if it was shorter than a window
+    const long long already_covered = offset == 0 ? 0 : window_samples - hop_samples;
+    if ((long long)buffer_count - already_covered >= (long long)(minimum * 16000)) {
+        emit_window(buffer, buffer_count, offset, folder, &pieces);
+    }
+    if (duration <= 0) duration = (double)(offset + (long long)buffer_count) / 16000;
+
+    av_frame_free(&frame);
+    av_packet_free(&packet);
+    free(converted);
+    free(buffer);
+    swr_free(&resampler);
+    avcodec_free_context(&decoder);
+    avformat_close_input(&format);
+    *out_pieces = pieces.items;
+    *out_count = pieces.count;
+    *out_duration = duration;
+    return 0;
+}
+
+/// The frame's 8×8 grayscale average hash, for telling shots apart (the same hash the Mac's reader uses).
+static uint64_t average_hash(const AVFrame *frame, struct SwsContext **sws) {
+    uint8_t pixels[64];
+    AVFrame *target = av_frame_alloc();
+    target->format = AV_PIX_FMT_GRAY8;
+    target->width = 8;
+    target->height = 8;
+    av_frame_get_buffer(target, 0);
+    if (!*sws) {
+        *sws = sws_getContext(frame->width, frame->height, frame->format, 8, 8, AV_PIX_FMT_GRAY8,
+                              SWS_AREA, NULL, NULL, NULL);
+    }
+    if (*sws) sws_scale(*sws, (const uint8_t *const *)frame->data, frame->linesize, 0, frame->height,
+                        target->data, target->linesize);
+    for (int y = 0; y < 8; y++) memcpy(pixels + y * 8, target->data[0] + (size_t)y * target->linesize[0], 8);
+    av_frame_free(&target);
+    int mean = 0;
+    for (int i = 0; i < 64; i++) mean += pixels[i];
+    mean /= 64;
+    uint64_t hash = 0;
+    for (int i = 0; i < 64; i++) if (pixels[i] > mean) hash |= (uint64_t)1 << i;
+    return hash;
+}
+
+/// How the video says it should be turned: EXIF orientation the rotations map to (1 none, 3 = 180°,
+/// 6 = 90° clockwise, 8 = 90° counter-clockwise), from the display matrix phones leave in their videos.
+static int display_orientation(AVCodecParameters *parameters) {
+    for (int i = 0; i < parameters->nb_coded_side_data; i++) {
+        if (parameters->coded_side_data[i].type != AV_PKT_DATA_DISPLAYMATRIX) continue;
+        double degrees = av_display_rotation_get((const int32_t *)parameters->coded_side_data[i].data);
+        while (degrees < 0) degrees += 360;
+        const int quarter = ((int)(degrees / 90.0 + 0.5)) % 4;
+        return quarter == 1 ? 6 : quarter == 2 ? 3 : quarter == 3 ? 8 : 1;
+    }
+    return 1;
+}
+
+int digup_video_keyframes(const char *path, double every, int max_pixel, int max_frames, const char *folder,
+                          DigupMediaPiece **out_pieces, int *out_count, double *out_duration, int *out_has_audio) {
+    *out_pieces = NULL;
+    *out_count = 0;
+    *out_duration = 0;
+    *out_has_audio = 0;
+    AVFormatContext *format = NULL;
+    if (avformat_open_input(&format, path, NULL, NULL) != 0) return -1;
+    if (avformat_find_stream_info(format, NULL) < 0) {
+        avformat_close_input(&format);
+        return -1;
+    }
+    const int video_index = stream_of_type(format, AVMEDIA_TYPE_VIDEO);
+    *out_has_audio = stream_of_type(format, AVMEDIA_TYPE_AUDIO) >= 0;
+    double duration = format->duration != AV_NOPTS_VALUE ? (double)format->duration / AV_TIME_BASE : 0;
+    if (video_index < 0 || !(duration > 0)) {
+        avformat_close_input(&format);
+        *out_duration = duration;
+        return 0;
+    }
+    AVCodecContext *decoder = open_decoder(format->streams[video_index]);
+    if (!decoder) {
+        avformat_close_input(&format);
+        return -1;
+    }
+    const int orientation = display_orientation(format->streams[video_index]->codecpar);
+    const double step = every > duration / max_frames ? every : duration / max_frames;
+    PieceList pieces = {0};
+    uint64_t last_hash = 0;
+    struct SwsContext *hash_sws = NULL, *scale_sws = NULL;
+    AVPacket *packet = av_packet_alloc();
+    AVFrame *frame = av_frame_alloc();
+    double previous_time = 0;
+
+    for (double time = fmin(0.5, duration / 2); time < duration; time += step) {
+        av_seek_frame(format, -1, (int64_t)(time * AV_TIME_BASE), AVSEEK_FLAG_BACKWARD);
+        avcodec_flush_buffers(decoder);
+        AVFrame *taken = NULL;
+        double frame_time = 0;
+        // The frame at (or just past) the moment asked for, with half a step's tolerance as the Mac allows
+        while (av_read_frame(format, packet) >= 0) {
+            const int is_video = packet->stream_index == video_index;
+            int sent = is_video ? avcodec_send_packet(decoder, packet) : 0;
+            av_packet_unref(packet);
+            if (is_video && sent < 0) break;
+            while (!taken && is_video && avcodec_receive_frame(decoder, frame) >= 0) {
+                const double when = frame->pts != AV_NOPTS_VALUE
+                    ? frame->pts * av_q2d(format->streams[video_index]->time_base) : previous_time;
+                if (when >= time - step / 2) {
+                    taken = av_frame_clone(frame);
+                    frame_time = when;
+                }
+                av_frame_unref(frame);
+            }
+            if (taken) break;
+        }
+        if (!taken) continue;
+        previous_time = frame_time;
+        const uint64_t hash = average_hash(taken, &hash_sws);
+        if (pieces.count > 0) {
+            const int differing = __builtin_popcountll(hash ^ last_hash);
+            if (differing <= 4) {
+                av_frame_free(&taken);
+                continue;
+            }
+        }
+        last_hash = hash;
+
+        // A JPEG of the frame, turned the way the video says, at most max_pixel on its longest side
+        const int source_w = taken->width, source_h = taken->height;
+        const double scale = (source_w > max_pixel || source_h > max_pixel)
+            ? (double)max_pixel / (source_w > source_h ? source_w : source_h) : 1.0;
+        const int target_w = (int)(source_w * scale), target_h = (int)(source_h * scale);
+        if (scale_sws) sws_freeContext(scale_sws);
+        scale_sws = sws_getContext(source_w, source_h, taken->format, target_w, target_h,
+                                   AV_PIX_FMT_RGB24, SWS_BILINEAR, NULL, NULL, NULL);
+        uint8_t *rgb = scale_sws ? malloc((size_t)target_w * target_h * 3) : NULL;
+        if (rgb) {
+            uint8_t *targets[4] = { rgb, NULL, NULL, NULL };
+            int target_strides[4] = { target_w * 3, 0, 0, 0 };
+            sws_scale(scale_sws, (const uint8_t *const *)taken->data, taken->linesize, 0, source_h,
+                      targets, target_strides);
+        }
+        av_frame_free(&taken);
+        int written_width = target_w, written_height = target_h;
+        if (rgb && (orientation == 3 || orientation == 6 || orientation == 8)) {
+            int w = 0, h = 0;
+            uint8_t *turned = rotated(rgb, target_w, target_h, orientation, &w, &h);
+            free(rgb);
+            rgb = turned;
+            written_width = w;
+            written_height = h;
+        }
+        if (rgb) {
+            char *name = scratch_name(folder, "jpg");
+            if (name && digup_write_jpeg(name, rgb, written_width, written_height, 90) == 0) {
+                pieces_add(&pieces, name, frame_time > 0 ? frame_time : 0, duration);
+            } else {
+                free(name);
+            }
+            free(rgb);
+        }
+    }
+    // Each kept frame stands for the stretch until the next kept frame
+    for (int i = 0; i + 1 < pieces.count; i++) pieces.items[i].end = pieces.items[i + 1].start;
+
+    if (scale_sws) sws_freeContext(scale_sws);
+    if (hash_sws) sws_freeContext(hash_sws);
+    av_frame_free(&frame);
+    av_packet_free(&packet);
+    avcodec_free_context(&decoder);
+    avformat_close_input(&format);
+    *out_pieces = pieces.items;
+    *out_count = pieces.count;
+    *out_duration = duration;
+    return 0;
 }
