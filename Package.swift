@@ -20,7 +20,14 @@ var targets: [Target] = [
     .testTarget(name: "DigUpCoreTests", dependencies: ["DigUpCore"]),
 ]
 #if os(Linux)
-targets.insert(.systemLibrary(name: "CSQLite", path: "Sources/CSQLite"), at: 0)
+targets += [
+    // The SQLite3 module (Apple toolchains ship one; Linux's comes from the system sqlite, FTS5 included).
+    .systemLibrary(name: "CSQLite", path: "Sources/CSQLite"),
+    // The Linux readers (Phase 2): slice one walks and reads documents; the rest of `Readers.linux` follows.
+    .systemLibrary(name: "CLibArchive", path: "Sources/CLibArchive"),
+    .target(name: "DigUpLinuxReaders", dependencies: ["DigUpCore", "CLibArchive"]),
+    .testTarget(name: "LinuxReadersTests", dependencies: ["DigUpLinuxReaders"]),
+]
 #endif
 
 #if os(macOS)

@@ -42,8 +42,10 @@ public enum DocText {
 
     /// Splits text into ~`size`-character pieces (~450 tokens) that overlap a little, breaking at whitespace.
     public static func chunks(_ text: String, size: Int = 1800, overlap: Int = 200, limit: Int) -> [String] {
+        // A literal tab and nbsp (Swift escapes, not the regex engine's): `\u{00A0}` as a regex escape behaves
+        // differently on Linux's regex, where it matches away whole texts.
         let clean = text
-            .replacingOccurrences(of: #"[ \t\u{00A0}]+"#, with: " ", options: .regularExpression)
+            .replacingOccurrences(of: "[ \t\u{00A0}]+", with: " ", options: .regularExpression)
             .replacingOccurrences(of: #"\n\s*\n\s*\n+"#, with: "\n\n", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
         var chunks: [String] = []
