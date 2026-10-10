@@ -23,10 +23,14 @@ var targets: [Target] = [
 targets += [
     // The SQLite3 module (Apple toolchains ship one; Linux's comes from the system sqlite, FTS5 included).
     .systemLibrary(name: "CSQLite", path: "Sources/CSQLite"),
-    // The Linux readers (Phase 2): slice one walks and reads documents; the rest of `Readers.linux` follows.
+    // The Linux readers (Phase 2): walking and reading documents (libarchive), images and their words (ffmpeg,
+    // libexif, stb_image_write, tesseract — the C side in CLinuxMedia), with the rest of `Readers.linux` to follow.
     .systemLibrary(name: "CLibArchive", path: "Sources/CLibArchive"),
-    .target(name: "DigUpLinuxReaders", dependencies: ["DigUpCore", "CLibArchive"]),
-    .testTarget(name: "LinuxReadersTests", dependencies: ["DigUpLinuxReaders"]),
+    .target(name: "CLinuxMedia",
+            linkerSettings: [.unsafeFlags(["-lavformat", "-lavcodec", "-lavutil", "-lswscale",
+                                           "-lexif", "-ltesseract"])]),
+    .target(name: "DigUpLinuxReaders", dependencies: ["DigUpCore", "CLibArchive", "CLinuxMedia"]),
+    .testTarget(name: "LinuxReadersTests", dependencies: ["DigUpLinuxReaders", "CLinuxMedia"]),
 ]
 #endif
 

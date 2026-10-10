@@ -23,9 +23,15 @@ extension Rules {
             if ext == "rtf" || ext == "doc" { return .skip("word processor format, not read on Linux yet") }
             return .index(.doc)
         }
+        if imageExtensions.contains(ext) { return .index(isScreenshot(url) ? .screenshot : .image) }
         if codeExtensions.contains(ext) { return options.includeCode ? .index(.doc) : .skip("code or data file") }
         return .ignore
     }
+
+    /// What ffmpeg decodes as a still image (HEIC and AVIF wait for libheif, which reads them directly).
+    static let imageExtensions: Set<String> = [
+        "jpg", "jpeg", "jfif", "png", "webp", "gif", "bmp", "tif", "tiff",
+    ]
 }
 
 /// The Linux walk: a port of DigUpKit's Crawler, which it stays in step with, with the differences the platform
