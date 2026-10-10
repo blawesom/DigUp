@@ -1,0 +1,33 @@
+{
+ "base": "~/DigUpTestbed",
+ "queries": [
+  {"q": "recette de crêpes", "expect": ["synthetic/lang/fr/recette crêpes.txt"], "tag": "fr-doc"},
+  {"q": "comment faire une pâte à crêpes sans grumeaux", "expect": ["synthetic/lang/fr/recette crêpes.txt"], "tag": "fr-doc"},
+  {"q": "week-end à Lyon", "expect": ["synthetic/lang/fr/voyage à Lyon.md"], "tag": "fr-doc"},
+  {"q": "manger des quenelles dans un bouchon", "expect": ["synthetic/lang/fr/voyage à Lyon.md"], "tag": "fr-doc"},
+  {"q": "le lancement reporté à décembre", "expect": ["synthetic/lang/fr/Compte rendu réunion.docx"], "tag": "fr-doc"},
+  {"q": "chercher un hôtel près de la gare", "expect": ["synthetic/lang/fr/voyage à Lyon.md"], "tag": "fr-inflect"},
+  {"q": "payer le loyer avant le cinq du mois", "expect": ["synthetic/lang/fr/contrat de location.pdf@1-1"], "tag": "fr-inflect"},
+  {"q": "prévenir le propriétaire deux mois avant de partir", "expect": ["synthetic/lang/fr/contrat de location.pdf@1-1"], "tag": "fr-pdf"},
+  {"q": "appartement loué 950 euros par mois", "expect": ["synthetic/lang/fr/contrat de location.pdf@1-1"], "tag": "fr-pdf"},
+  {"q": "les boucles et les fonctions en python", "expect": ["synthetic/lang/fr/contrat de location.pdf@2-2"], "tag": "fr-pdf"},
+  {"q": "écrire une fonction factorielle", "expect": ["synthetic/lang/fr/contrat de location.pdf@2-2"], "tag": "fr-pdf"},
+  {"q": "carte rejetée par la banque", "expect": ["synthetic/lang/fr/paiement_refuse_fr.png", "synthetic/screenshots/shot_payment_error.png"], "tag": "fr-shot"},
+  {"q": "numéro de commande 48217", "expect": ["synthetic/lang/fr/paiement_refuse_fr.png"], "tag": "fr-shot"},
+  {"q": "il pleuvra sur Lyon demain", "expect": ["synthetic/lang/fr/speech_weather_fr.wav"], "tag": "fr-audio"},
+  {"q": "des orages en fin d'après-midi", "expect": ["synthetic/lang/fr/speech_weather_fr.wav"], "tag": "fr-audio"},
+  {"q": "Fourvière", "expect": ["synthetic/lang/fr/voyage à Lyon.md"], "tag": "fr-word"},
+  {"q": "quenelles", "expect": ["synthetic/lang/fr/voyage à Lyon.md"], "tag": "fr-word"},
+  {"q": "crepe recipe", "expect": ["synthetic/lang/fr/recette crêpes.txt"], "tag": "en→fr"},
+  {"q": "hotel near the train station", "expect": ["synthetic/lang/fr/voyage à Lyon.md"], "tag": "en→fr"},
+  {"q": "lease agreement monthly rent", "expect": ["synthetic/lang/fr/contrat de location.pdf@1-1"], "tag": "en→fr"},
+  {"q": "payment declined, card rejected by the bank", "expect": ["synthetic/lang/fr/paiement_refuse_fr.png", "synthetic/screenshots/shot_payment_error.png"], "tag": "en→fr"},
+  {"q": "python loops and functions", "expect": ["synthetic/lang/fr/contrat de location.pdf@2-2"], "tag": "en→fr"},
+  {"q": "itinéraire de voyage à Tokyo", "expect": ["synthetic/docs/Tokyo itinerary.md"], "tag": "fr→en"},
+  {"q": "reçu de la boutique de café", "expect": ["synthetic/docs/Scan 2026-09-14.pdf"], "tag": "fr→en"},
+  {"q": "grimper le mont Fuji", "expect": ["synthetic/docs/Annual notes 2026.pdf@2-2"], "tag": "fr→en"},
+  {"q": "un zèbre", "expect": ["synthetic/img/Animals-Zebra.jpg", "synthetic/video/penguin_zebra_parrot_18s.mp4@6-12", "traps/real-mpeg-ts/zoo clip.ts@6-12"], "tag": "fr→media"},
+  {"q": "un orage électrique", "expect": ["synthetic/img/Nature-Lightning.jpg"], "tag": "fr→media"},
+  {"q": "un manchot", "expect": ["synthetic/img/Animals-Penguin.jpg", "traps/duplicates/penguin.jpg", "traps/duplicates/penguin copy.jpg", "synthetic/video/penguin_zebra_parrot_18s.mp4@0-6", "traps/real-mpeg-ts/zoo clip.ts@0-6"], "tag": "fr→media"}
+ ]
+}

@@ -1,6 +1,6 @@
-// Writes Bengali and Arabic files with known content (ground truth for evals/multilingual.json): notes in
-// txt/md/rtf/docx, two-page PDFs (one topic per page) and screenshots of app UIs.
-//   swift make_lang.swift <out_dir>        (→ <out_dir>/bn, <out_dir>/ar)
+// Writes Bengali, Arabic and French files with known content (ground truth for evals/multilingual.json and
+// evals/french.json): notes in txt/md/rtf/docx, two-page PDFs (one topic per page) and screenshots of app UIs.
+//   swift make_lang.swift <out_dir>        (→ <out_dir>/bn, <out_dir>/ar, <out_dir>/fr)
 //
 // The PDFs are made by WebKit, as Safari's Export as PDF makes them: their text layer is what real files have (PDFKit
 // reads Arabic from it fine, and Bengali in glyph order, garbled). PDFs drawn with CoreText directly read worse.
@@ -17,9 +17,10 @@ func folder(_ name: String) -> URL {
 }
 
 func font(_ language: String, _ size: CGFloat, bold: Bool = false) -> NSFont {
-    let name = language == "bn" ? (bold ? "KohinoorBangla-Semibold" : "KohinoorBangla-Regular")
-                                : (bold ? "GeezaPro-Bold" : "GeezaPro")
-    return NSFont(name: name, size: size) ?? NSFont.systemFont(ofSize: size, weight: bold ? .bold : .regular)
+    let names = ["bn": bold ? "KohinoorBangla-Semibold" : "KohinoorBangla-Regular",
+                 "ar": bold ? "GeezaPro-Bold" : "GeezaPro"]
+    if let name = names[language], let font = NSFont(name: name, size: size) { return font }
+    return NSFont.systemFont(ofSize: size, weight: bold ? .bold : .regular)
 }
 
 /// Text in a box, right-aligned and right-to-left for Arabic.
@@ -76,7 +77,7 @@ final class PDFMaker: NSObject, WKNavigationDelegate {
 }
 
 func html(_ page: (title: String, body: String), language: String) -> String {
-    let fontName = language == "bn" ? "Kohinoor Bangla" : "Geeza Pro"
+    let fontName = language == "bn" ? "Kohinoor Bangla" : language == "ar" ? "Geeza Pro" : "Helvetica Neue"
     return """
         <!doctype html><html lang="\(language)" dir="\(language == "ar" ? "rtl" : "ltr")"><head><meta charset="utf-8">
         <style>body { font: 15px/1.6 "\(fontName)", sans-serif; margin: 60px; } h1 { font-size: 24px; }</style></head>
@@ -247,6 +248,61 @@ screenshot(ar.appendingPathComponent("payment_error_ar.png"), title: "متجر �
     draw("إعادة المحاولة", in: CGRect(x: r.maxX - 280, y: r.maxY - 440, width: 260, height: 44), language: "ar",
          size: 24, bold: true, color: .white)
 }
+// MARK: French
+
+let fr = folder("fr")
+note(fr.appendingPathComponent("recette crêpes.txt"), """
+    Pâte à crêpes : mélanger la farine et le sucre dans un grand bol, puis creuser un puits et y verser les \
+    œufs battus. Ajouter le lait petit à petit en fouettant, pour éviter les grumeaux. Laisser reposer la \
+    pâte une heure. Beurrer la poêle chaude et verser une louche de pâte, la répartir en inclinant la \
+    poêle. Cuire chaque crêpe deux minutes, la retourner quand les bords se décollent, et la garnir de \
+    sucre, de confiture ou de chocolat fondu.
+    """, language: "fr")
+note(fr.appendingPathComponent("voyage à Lyon.md"), """
+    # Un week-end à Lyon
+
+    Nous avons cherché un hôtel près de la gare, et après une longue marche dans le Vieux Lyon nous \
+    l'avons trouvé. Le matin, nous avons visité la basilique de Fourvière et marché le long des quais du \
+    Saône. Nous avons mangé dans un bouchon : salade lyonnaise, quenelles et une tarte aux pralines. Le \
+    dernier soir, nous avons cherché un restaurant ouvert tard, sans succès — tout ferme à dix heures.
+    """, language: "fr")
+note(fr.appendingPathComponent("Compte rendu réunion.docx"), """
+    Compte rendu de réunion
+
+    L'équipe a décidé de reporter le lancement de l'application à décembre, à cause de problèmes dans le \
+    système de paiement. L'équipe serveur corrigera les erreurs avant la fin du mois, et la nouvelle \
+    version sera testée avec un petit groupe d'utilisateurs.
+    """, language: "fr")
+pdf(fr.appendingPathComponent("contrat de location.pdf"), language: "fr", pages: [
+    ("Contrat de location", """
+        L'appartement de trois pièces de la rue de la République est loué pour un loyer mensuel de 950 \
+        euros. Le locataire versera deux mois de loyer d'avance. Le loyer doit être payé avant le cinq de \
+        chaque mois. Les charges d'électricité, d'eau et de gaz sont payées séparément par le locataire. Le \
+        bail dure un an, et le locataire qui veut partir préviendra le propriétaire par écrit au moins deux \
+        mois à l'avance.
+        """),
+    ("Notes du cours de programmation", """
+        Aujourd'hui nous avons appris les boucles et les fonctions en Python. La boucle for parcourt chaque \
+        élément d'une liste, et la boucle while tourne tant que la condition est vraie. On crée une fonction \
+        avec le mot def, et return renvoie le résultat. Devoir : écrire une fonction qui calcule la \
+        factorielle d'un nombre, puis l'afficher pour tous les nombres de un à dix.
+        """),
+])
+screenshot(fr.appendingPathComponent("paiement_refuse_fr.png"), title: "Boutique — Paiement", language: "fr") { r in
+    draw("Finaliser la commande", in: CGRect(x: r.minX, y: r.maxY - 60, width: r.width, height: 60), language: "fr",
+         size: 34, bold: true)
+    fill(NSRect(x: r.minX, y: r.maxY - 200, width: r.width, height: 110), NSColor(red: 1, green: 0.9, blue: 0.9, alpha: 1))
+    draw("⚠︎  Paiement refusé : carte rejetée par la banque", in: CGRect(x: r.minX + 30, y: r.maxY - 175,
+         width: r.width - 60, height: 60), language: "fr", size: 30, bold: true, color: .systemRed)
+    draw("Montant : 350 €   ·   Nº de commande : 48217   ·   Carte finissant par 4242", in: CGRect(x: r.minX,
+         y: r.maxY - 290, width: r.width, height: 50), language: "fr", size: 24)
+    draw("Essayez une autre carte ou réessayez plus tard.", in: CGRect(x: r.minX, y: r.maxY - 350, width: r.width,
+         height: 50), language: "fr", size: 22, color: .darkGray)
+    fill(NSRect(x: r.maxX - 300, y: r.maxY - 450, width: 300, height: 60), .systemBlue)
+    draw("Réessayer", in: CGRect(x: r.maxX - 280, y: r.maxY - 440, width: 260, height: 44), language: "fr",
+         size: 24, bold: true, color: .white)
+}
+
 let app = NSApplication.shared
 app.setActivationPolicy(.prohibited)
 makePDFs {

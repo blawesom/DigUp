@@ -26,7 +26,7 @@ mv "$S/shots" "$S/screenshots"
 for f in "$S/screenshots"/*.png; do xattr -w com.apple.metadata:kMDItemIsScreenCapture 1 "$f"; done
 swift "$REPO/scripts/testbed/make_docs.swift" "$S/docs" >/dev/null
 swift "$REPO/scripts/testbed/make_long.swift" "$S/long" >/dev/null   # deep pages: read after the first pass
-"$REPO/scripts/testbed/make_lang.sh" "$S/lang"   # Bengali and Arabic (evals/multilingual.json)
+"$REPO/scripts/testbed/make_lang.sh" "$S/lang"   # Bengali, Arabic and French (evals/multilingual.json, evals/french.json)
 
 echo "== traps/ =="
 T="$TB/traps"; mkdir -p "$T"

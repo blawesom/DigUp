@@ -149,11 +149,12 @@ The app itself is about 20 MB.
 **Will it slow my Mac down?** Only the first pass is heavy. After that it reads new files only. The model runs in a
 separate process that quits when it's done, and the search side only loads while you're searching.
 
-**Which languages?** The model knows more than 100, and DigUp searches in all of them, across languages too. The evals
-cover only English, Bengali and Arabic because those are the languages of the files DigUp was tested on, and Google
-notes that the model isn't equally strong in every language. Two limits apply to exact words, not to meaning: inside
-screenshots they're read by Apple's text recognition, which knows about 25 languages, and languages written without
-spaces, like Chinese, Japanese and Thai, aren't split into words.
+**Which languages?** The model knows more than 100, and DigUp searches in all of them, across languages too. The
+evals cover English, French, Bengali and Arabic — the languages of the files DigUp was tested on — and Google notes
+that the model isn't equally strong in every language. French words also match however they're inflected
+("chercher" finds "cherché"), as English's do; two limits apply to exact words, not to meaning: inside screenshots
+they're read by Apple's text recognition, which knows about 25 languages, and languages written without spaces, like
+Chinese, Japanese and Thai, aren't split into words.
 
 **How do I remove it?** Quit it, then delete DigUp.app and `~/Library/Application Support/DigUp`, which holds the
 model and the indexes. Its settings are in `~/Library/Preferences/com.abdurrahim.DigUp.plist`.
