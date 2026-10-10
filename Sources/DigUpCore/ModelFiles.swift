@@ -1,5 +1,4 @@
-import CryptoKit
-import DigUpCore
+import Crypto
 import Foundation
 
 /// The EmbeddingGemma 2 files the app runs: ggml-org's Q8_0 GGUF conversion at one pinned revision of the repo (made
@@ -33,9 +32,17 @@ public enum ModelFiles {
     public static let all = [text, media]
     public static let totalBytes = all.reduce(0) { $0 + $1.bytes }
 
-    /// Where the app keeps them.
+    /// Where the app keeps them (the Mac's Application Support, Linux's XDG state).
     public static let installed = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent("Library/Application Support/DigUp/Models")
+        .appendingPathComponent(Self.modelsFolder)
+
+    private static var modelsFolder: String {
+        #if os(macOS)
+        "Library/Application Support/DigUp/Models"
+        #else
+        ".local/share/DigUp/Models"
+        #endif
+    }
 
     /// The pinned revision's folder in the Hugging Face cache (`hf download` puts the files there): `$HF_HUB_CACHE`,
     /// `$HF_HOME/hub`, or `~/.cache/huggingface/hub`.
@@ -65,12 +72,8 @@ public enum ModelFiles {
         defer { try? handle.close() }
         var hasher = SHA256()
         while true {
-            let done = try autoreleasepool { () -> Bool in
-                guard let data = try handle.read(upToCount: 8 << 20), !data.isEmpty else { return true }
-                hasher.update(data: data)
-                return false
-            }
-            if done { break }
+            guard let data = try handle.read(upToCount: 8 << 20), !data.isEmpty else { break }
+            hasher.update(data: data)
         }
         return hasher.finalize().map { String(format: "%02x", $0) }.joined()
     }

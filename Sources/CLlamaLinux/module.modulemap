@@ -1,0 +1,20 @@
+// The Linux side of the llama.cpp module (see Sources/CLlama for the Mac's): the same headers, linking the CPU
+// build scripts/build-llama.sh makes into Vendor/llama/lib/libllamacpp.a (one archive, merged there).
+module CLlama [system] {
+    header "../../Vendor/llama/include/llama.h"
+    header "../../Vendor/llama/include/mtmd.h"
+    header "../../Vendor/llama/include/mtmd-helper.h"
+    header "../../Vendor/llama/include/llama-build.h"
+    link "llama"
+    link "mtmd"
+    link "ggml"
+    link "ggml-base"
+    link "ggml-cpu"
+    link "vendor-hash"
+    link "stdc++"
+    link "gomp"
+    link "pthread"
+    link "m"
+    link "dl"
+    export *
+}

@@ -1,6 +1,22 @@
-import DigUpKit
+#if canImport(DigUpKit)
+import DigUpKit   // estimate, the Mac's crawl and Spotlight-based time estimates
+#endif
+#if canImport(DigUpLinuxReaders)
+import DigUpLinuxReaders
+#endif
+import DigUpCore
 import Foundation
 import LlamaRuntime
+
+/// The readers the CLI indexes with: the Mac's (ImageIO, Vision, PDFKit, AVFoundation) on a Mac, Linux's
+/// (ffmpeg, pdfium, tesseract) on Linux.
+let platformReaders: Readers = {
+    #if os(macOS)
+    return .macOS
+    #else
+    return .linux
+    #endif
+}()
 
 // DigUp's developer CLI. Every command works on an explicit index folder, so tests never touch the real one.
 
@@ -76,9 +92,18 @@ struct Arguments {
         }
     }
 
+    /// Where the index lives without `--index`: the Mac's Application Support, Linux's XDG state.
+    private static var defaultIndexFolder: String {
+        #if os(macOS)
+        "~/Library/Application Support/DigUp/index.noindex"
+        #else
+        "~/.local/share/DigUp/index.noindex"
+        #endif
+    }
+
     var indexFolder: URL {
-        URL(fileURLWithPath: ((values["--index"] ?? "~/Library/Application Support/DigUp/index.noindex")
-            as NSString).expandingTildeInPath).standardizedFileURL
+        URL(fileURLWithPath: ((values["--index"] ?? Self.defaultIndexFolder) as NSString).expandingTildeInPath)
+            .standardizedFileURL
     }
 
     /// `--code`: the code index, not the main one.
@@ -195,6 +220,7 @@ func embedderSource() -> String? {
     ProcessInfo.processInfo.environment["DIGUP_WORKER_DIR"] == nil ? LlamaEmbedder.modelInfo.vectorSource : nil
 }
 
+#if os(macOS)
 func estimate(_ args: Arguments) throws {
     guard !args.positional.isEmpty else { throw CLIError("which folders? e.g. digup estimate ~/Documents") }
     let options = args.options
@@ -271,11 +297,12 @@ func estimate(_ args: Arguments) throws {
     }
     if args.positional.count > 1, !args.flags.contains("--json") { print("all together ≈ \(duration(total))") }
 }
+#endif
 
 func index(_ args: Arguments) throws {
     let store = try args.store()
     if args.flags.contains("--reindex") { try store.resetAll() }
-    let indexer = try Indexer(store: store, options: args.options, readers: .macOS, makeEmbedder: {
+    let indexer = try Indexer(store: store, options: args.options, readers: platformReaders, makeEmbedder: {
         try makeEmbedder(textOnly: false, log: store.directory.appendingPathComponent("worker.log"))
     })
     indexer.embedderSource = embedderSource()
@@ -403,7 +430,7 @@ func indexService(_ args: Arguments) throws -> Int32 {
     }
     func part(_ file: String, options: IndexOptions, roots: [URL]) throws -> IndexService.Part {
         let store = try IndexStore(directory: args.indexFolder, file: file)
-        let indexer = try Indexer(store: store, options: options, readers: .macOS, makeEmbedder: { try model.embedder() })
+        let indexer = try Indexer(store: store, options: options, readers: platformReaders, makeEmbedder: { try model.embedder() })
         // A new app version may bring a new model: the index starts over by itself (keyword search on names goes on).
         indexer.embedderSource = embedderSource()
         indexer.resetOnModelChange = { indexed, now in
@@ -527,7 +554,12 @@ do {
     }
     let args = try Arguments(raw.dropFirst())
     switch command {
-    case "estimate": try estimate(args)
+    case "estimate":
+        #if os(macOS)
+        try estimate(args)
+        #else
+        throw CLIError("estimate isn't ported to Linux yet (its time model reads Spotlight)")
+        #endif
     case "index": try index(args)
     case "search": try search(args)
     case "status": try status(args)
