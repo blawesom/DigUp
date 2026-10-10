@@ -39,7 +39,7 @@ jobs:
           swift test 2>&1 | tee /tmp/test.log
           status=${PIPESTATUS[0]}
           if [ "$status" != "0" ]; then
-            grep -E "error:|✘|Test run with" /tmp/test.log | sed -n '1,30p' | while IFS= read -r line; do
+            grep -E "error:|✘|◇|signal|Test run with" /tmp/test.log | sed -n '1,60p' | while IFS= read -r line; do
               echo "::error::${line:0:220}"
             done
             exit "$status"
@@ -71,7 +71,7 @@ jobs:
           swift test 2>&1 | tee /tmp/test.log
           status=${PIPESTATUS[0]}
           if [ "$status" != "0" ]; then
-            grep -E "error:|✘|Test run with" /tmp/test.log | sed -n '1,30p' | while IFS= read -r line; do
+            grep -E "error:|✘|◇|signal|Test run with" /tmp/test.log | sed -n '1,60p' | while IFS= read -r line; do
               echo "::error::${line:0:220}"
             done
             exit "$status"

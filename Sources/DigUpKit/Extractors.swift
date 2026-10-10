@@ -78,7 +78,7 @@ enum PDFExtractor {
         throws -> (pages: [ReadPage], total: Int, title: String?) {
         guard let document = PDFDocument(url: url) else { throw ExtractError.unreadable("can't open PDF") }
         if document.isLocked { throw ExtractError.locked }
-        var pages: [Page] = []
+        var pages: [ReadPage] = []
         for index in range(document.pageCount).clamped(to: 0..<document.pageCount) {
             guard let page = document.page(at: index) else { continue }
             var text = (page.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
