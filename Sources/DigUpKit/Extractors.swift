@@ -7,16 +7,9 @@ import UniformTypeIdentifiers
 import Vision
 
 enum ImageExtractor {
-    struct Prepared: Sendable {
-        let path: String
-        let width: Int
-        let height: Int
-        let taken: String?   // EXIF DateTimeOriginal, as written by the camera
-    }
-
     /// Writes a downscaled copy for the model. ImageIO decodes straight to the thumbnail size, so a 48 MP photo never
     /// gets decoded at full resolution. HEIC, RAW, WebP and friends all work.
-    static func prepare(_ url: URL, maxPixel: Int, minSide: Int, to folder: URL, png: Bool) throws -> Prepared {
+    static func prepare(_ url: URL, maxPixel: Int, minSide: Int, to folder: URL, png: Bool) throws -> ReadImage {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary)
         else { throw ExtractError.unreadable("not an image") }
         let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any] ?? [:]
@@ -34,7 +27,7 @@ enum ImageExtractor {
         let out = folder.appendingPathComponent(UUID().uuidString + (png ? ".png" : ".jpg"))
         try write(thumbnail, to: out, png: png)
         let exif = properties[kCGImagePropertyExifDictionary] as? [CFString: Any]
-        return Prepared(path: out.path, width: width, height: height,
+        return ReadImage(path: out.path, width: width, height: height,
                         taken: exif?[kCGImagePropertyExifDateTimeOriginal] as? String)
     }
 
@@ -76,23 +69,13 @@ enum OCR {
 }
 
 enum PDFExtractor {
-    struct Page: Sendable {
-        let number: Int        // 1-based
-        let text: String       // may be empty for scans
-        let imagePath: String? // set when the page had too little text and was rendered for the vision encoder
-        var ocr = false        // the text came from OCR: the text layer was garbled (`PageTextProblem.lostLetters`)
-        /// Text read in glyph order (`PageTextProblem.glyphOrder`): too garbled to show or match words against, but
-        /// enough of its words survive for a meaning vector beside the page's picture.
-        var garbled: String?
-    }
-
     /// Reads the pages in `range(pageCount)` (0-based). Pages with real text become text; scans and slides are
     /// rendered. Text layers PDFKit reads garbled are replaced: by OCR where letters were lost (Arabic ligatures), by
     /// the rendered page where the words came out in glyph order (Bengali, which OCR can't read). On the multilingual
     /// eval (2026-10-08), a glyph-order page as picture + garbled-text vector beat the picture alone: R@1 0.75 vs 0.73,
     /// MRR 0.84 vs 0.81 (an English query for a Bengali page found it only through the text vector).
     static func pages(of url: URL, range: (Int) -> Range<Int>, minText: Int, renderPixels: Int, to folder: URL)
-        throws -> (pages: [Page], total: Int, title: String?) {
+        throws -> (pages: [ReadPage], total: Int, title: String?) {
         guard let document = PDFDocument(url: url) else { throw ExtractError.unreadable("can't open PDF") }
         if document.isLocked { throw ExtractError.locked }
         var pages: [Page] = []
@@ -107,26 +90,26 @@ enum PDFExtractor {
                     let read = OCR.text(in: image).trimmingCharacters(in: .whitespacesAndNewlines)
                     if read.count >= minText, PageTextProblem.check(read) == nil,
                        read.unicodeScalars.contains(where: { Script.arabic.contains($0.value) }) {
-                        pages.append(Page(number: index + 1, text: read, imagePath: nil, ocr: true))
+                        pages.append(ReadPage(number: index + 1, text: read, imagePath: nil, ocr: true))
                         continue
                     }
                 }
                 if text.count >= minText {
-                    pages.append(Page(number: index + 1, text: text, imagePath: nil))
+                    pages.append(ReadPage(number: index + 1, text: text, imagePath: nil))
                     continue
                 }
             case .glyphOrder:
                 (text, garbled) = ("", text)
             case nil:
                 if text.count >= minText {
-                    pages.append(Page(number: index + 1, text: text, imagePath: nil))
+                    pages.append(ReadPage(number: index + 1, text: text, imagePath: nil))
                     continue
                 }
             }
             guard let image = render(page, pixels: renderPixels) else { continue }
             let out = folder.appendingPathComponent(UUID().uuidString + ".png")
             try ImageExtractor.write(image, to: out, png: true)
-            pages.append(Page(number: index + 1, text: text, imagePath: out.path, garbled: garbled))
+            pages.append(ReadPage(number: index + 1, text: text, imagePath: out.path, garbled: garbled))
         }
         let title = document.documentAttributes?[PDFDocumentAttribute.titleAttribute] as? String
         return (pages, document.pageCount, title)
@@ -141,8 +124,8 @@ enum PDFExtractor {
 }
 
 enum DocExtractor {
-    /// Plain text from txt/md directly, HTML by stripping tags, and rtf/docx/doc/odt through the Cocoa text system.
-    /// (Cocoa's HTML import runs WebKit and must be on the main thread; the app indexes on a background queue.)
+    /// Plain text from txt/md directly, HTML through `DocText.plainText`, and rtf/docx/doc/odt through the Cocoa text
+    /// system. (Cocoa's HTML import runs WebKit and must be on the main thread; the app indexes on a background queue.)
     static func text(of url: URL) throws -> String {
         let ext = url.pathExtension.lowercased()
         let type: NSAttributedString.DocumentType
@@ -151,7 +134,7 @@ enum DocExtractor {
         case "doc": type = .docFormat
         case "odt": type = .openDocument
         case "rtf": type = .rtf
-        case "html", "htm": return plainText(fromHTML: try readText(url))
+        case "html", "htm": return DocText.plainText(fromHTML: try readText(url))
         default: return try readText(url)
         }
         return try NSAttributedString(url: url, options: [.documentType: type], documentAttributes: nil).string
@@ -161,68 +144,5 @@ enum DocExtractor {
         var encoding = String.Encoding.utf8
         if let text = try? String(contentsOf: url, usedEncoding: &encoding) { return text }
         return try String(contentsOf: url, encoding: .isoLatin1)
-    }
-
-    /// Good enough for search: drops scripts, styles and comments, turns block ends into line breaks, strips the
-    /// remaining tags, and decodes common entities.
-    static func plainText(fromHTML html: String) -> String {
-        var text = html
-        for pattern in [#"(?is)<script\b.*?</script\s*>"#, #"(?is)<style\b.*?</style\s*>"#, #"(?s)<!--.*?-->"#,
-                        #"(?is)<head\b.*?</head\s*>"#] {
-            text = text.replacingOccurrences(of: pattern, with: " ", options: .regularExpression)
-        }
-        text = text.replacingOccurrences(of: #"(?i)<(br|/p|/div|/li|/h[1-6]|/tr|/section|/article)\b[^>]*>"#,
-                                         with: "\n", options: .regularExpression)
-        text = text.replacingOccurrences(of: #"<[^>]+>"#, with: " ", options: .regularExpression)
-        let entities = ["&nbsp;": " ", "&amp;": "&", "&lt;": "<", "&gt;": ">", "&quot;": "\"", "&#39;": "'",
-                        "&apos;": "'", "&mdash;": "—", "&ndash;": "–", "&hellip;": "…"]
-        for (entity, character) in entities { text = text.replacingOccurrences(of: entity, with: character) }
-        text = decodeNumericEntities(text)
-        return text.replacingOccurrences(of: #"[ \t]+"#, with: " ", options: .regularExpression)
-            .replacingOccurrences(of: #"\s*\n\s*"#, with: "\n", options: .regularExpression)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private static func decodeNumericEntities(_ text: String) -> String {
-        guard text.contains("&#") else { return text }
-        let pattern = try! NSRegularExpression(pattern: "&#(x[0-9a-fA-F]+|[0-9]+);")
-        var result = ""
-        var last = text.startIndex
-        for match in pattern.matches(in: text, range: NSRange(text.startIndex..., in: text)) {
-            guard let range = Range(match.range, in: text), let codeRange = Range(match.range(at: 1), in: text)
-            else { continue }
-            let code = text[codeRange]
-            let value = code.hasPrefix("x") ? UInt32(code.dropFirst(), radix: 16) : UInt32(code)
-            result += text[last..<range.lowerBound]
-            result += value.flatMap(Unicode.Scalar.init).map { String(Character($0)) } ?? " "
-            last = range.upperBound
-        }
-        return result + text[last...]
-    }
-
-    /// Splits text into ~`size`-character pieces (~450 tokens) that overlap a little, breaking at whitespace.
-    static func chunks(_ text: String, size: Int = 1800, overlap: Int = 200, limit: Int) -> [String] {
-        let clean = text
-            .replacingOccurrences(of: #"[ \t\u{00A0}]+"#, with: " ", options: .regularExpression)
-            .replacingOccurrences(of: #"\n\s*\n\s*\n+"#, with: "\n\n", options: .regularExpression)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        var chunks: [String] = []
-        var start = clean.startIndex
-        while start < clean.endIndex, chunks.count < limit {
-            var end = clean.index(start, offsetBy: size, limitedBy: clean.endIndex) ?? clean.endIndex
-            if end < clean.endIndex, let space = clean[start..<end].lastIndex(where: \.isWhitespace),
-               clean.distance(from: start, to: space) > size / 2 {
-                end = space
-            }
-            let chunk = clean[start..<end].trimmingCharacters(in: .whitespacesAndNewlines)
-            if !chunk.isEmpty { chunks.append(chunk) }
-            guard end < clean.endIndex else { break }
-            var next = clean.index(end, offsetBy: -overlap, limitedBy: start) ?? end
-            if next <= start { next = end }
-            // Start the next chunk on a word boundary.
-            while next < end, !clean[next].isWhitespace { next = clean.index(after: next) }
-            start = next < end ? next : end
-        }
-        return chunks
     }
 }

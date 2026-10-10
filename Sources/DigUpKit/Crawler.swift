@@ -2,13 +2,6 @@ import DigUpCore
 import Foundation
 import UniformTypeIdentifiers
 
-public struct CrawlReport: Sendable {
-    public var candidates: [Candidate] = []
-    public var skipped: [String: Int] = [:]          // reason → files
-    public var skippedFolders: [String: Int] = [:]   // reason → folders not walked into
-    public var datasets: [String: Int] = [:]         // folder → files skipped as a dataset
-}
-
 /// Walks the chosen folders and applies `Rules`. Reads metadata only, never file contents (except the 600-byte
 /// sniff that tells a real MPEG-TS video from a TypeScript file).
 ///

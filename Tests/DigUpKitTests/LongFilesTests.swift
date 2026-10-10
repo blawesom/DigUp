@@ -22,7 +22,7 @@ import Testing
     var files: URL { folder.appendingPathComponent("files") }
 
     func indexer(_ store: IndexStore, _ embedder: FakeEmbedder, options: IndexOptions = IndexOptions()) throws -> Indexer {
-        try Indexer(store: store, options: options, makeEmbedder: { embedder })
+        try Indexer(store: store, options: options, readers: .macOS, makeEmbedder: { embedder })
     }
 
     func store() throws -> IndexStore { try IndexStore(directory: folder.appendingPathComponent("index")) }
@@ -117,7 +117,7 @@ import Testing
         let url = files.appendingPathComponent("Notes.txt")
         try FileManager.default.createDirectory(at: files, withIntermediateDirectories: true)
         try text.write(to: url, atomically: true, encoding: .utf8)
-        let chunks = DocExtractor.chunks(text, limit: 10_000)
+        let chunks = DocText.chunks(text, limit: 10_000)
         #expect(chunks.count > 80)
         let store = try store()
         let indexer = try indexer(store, FakeEmbedder())

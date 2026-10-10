@@ -90,7 +90,7 @@ import Testing
         try FileManager.default.createDirectory(at: drive, withIntermediateDirectories: true)
         try Data("notes from the trip".utf8).write(to: drive.appendingPathComponent("notes.txt"))
         let store = try IndexStore(directory: base.appendingPathComponent("index"))
-        let indexer = try Indexer(store: store, options: IndexOptions(),
+        let indexer = try Indexer(store: store, options: IndexOptions(), readers: .macOS,
                                   makeEmbedder: { throw WorkerError.notFound("no model needed to sync") })
         #expect(try indexer.sync([drive]).added == 1)
         try FileManager.default.moveItem(at: drive, to: base.appendingPathComponent("ejected"))

@@ -58,7 +58,7 @@ import Testing
 
     @Test func chunksOverlapAndRespectWords() {
         let text = (1...600).map { "word\($0)" }.joined(separator: " ")
-        let chunks = DocExtractor.chunks(text, size: 500, overlap: 100, limit: 100)
+        let chunks = DocText.chunks(text, size: 500, overlap: 100, limit: 100)
         #expect(chunks.count > 5)
         #expect(chunks.allSatisfy { $0.count <= 500 })
         #expect(chunks.allSatisfy { $0.hasPrefix("word") })   // never starts mid-word
@@ -71,7 +71,7 @@ import Testing
             <body><h1>Trip &amp; plans</h1><p>Fly to <b>Tokyo</b>&nbsp;on Friday.</p><script>var x = 1;</script>
             <p>Caf&#233; &#x2014; ramen</p><!-- hidden --></body></html>
             """
-        #expect(DocExtractor.plainText(fromHTML: html) == "Trip & plans\nFly to Tokyo on Friday.\nCafé — ramen")
+        #expect(DocText.plainText(fromHTML: html) == "Trip & plans\nFly to Tokyo on Friday.\nCafé — ramen")
     }
 
     @Test func halfVectorsConvertBackExactly() throws {

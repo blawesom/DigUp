@@ -238,7 +238,7 @@ import Testing
         let store = try IndexStore(directory: index, file: IndexStore.codeFile)
         #expect(store.file.lastPathComponent == "code.sqlite")
         let embedder = FakeEmbedder()
-        let indexer = try Indexer(store: store, options: codeOptions, makeEmbedder: { embedder })
+        let indexer = try Indexer(store: store, options: codeOptions, readers: .macOS, makeEmbedder: { embedder })
         _ = try indexer.sync([folder.appendingPathComponent("billing")])
         #expect(try indexer.run() == ["done": 1, "skipped": 1])
         var rows: [(kind: String, loc: Int, end: Int)] = []
@@ -318,7 +318,7 @@ import Testing
         try write("app/.git/HEAD", "ref: refs/heads/main\n")
         try write("app/Auth.swift", calls + definition)
         let store = try IndexStore(directory: folder.appendingPathComponent("index"), file: IndexStore.codeFile)
-        let indexer = try Indexer(store: store, options: codeOptions, makeEmbedder: { FakeEmbedder() })
+        let indexer = try Indexer(store: store, options: codeOptions, readers: .macOS, makeEmbedder: { FakeEmbedder() })
         _ = try indexer.sync([folder.appendingPathComponent("app")])
         try indexer.run()
         let hit = try #require(try Searcher(store: store).search("refreshAccessToken", queryVector: nil).first)

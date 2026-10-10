@@ -19,13 +19,6 @@ func runBlocking<T: Sendable>(_ operation: @escaping @Sendable () async throws -
     return try box.result!.get()
 }
 
-/// A stretch of audio written to a temporary WAV for the model, or a video frame written to a JPEG.
-struct MediaPiece: Sendable {
-    let path: String
-    let start: Double
-    var end: Double
-}
-
 enum AudioExtractor {
     static let sampleRate = 16_000.0
 
