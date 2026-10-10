@@ -6,7 +6,10 @@ import Testing
 /// PDFs on Linux, end to end: the fixtures are written as they are (a small but real PDF writer — catalog,
 /// pages, Helvetica text and a drawn rectangle, with a correct xref), pdfium reads them back, and the Mac's
 /// PDFKit flow decides what each page becomes: real text as text, too little as a rendered picture.
-@Suite struct LinuxPDFTests {
+///
+/// Serialized: pdfium isn't thread-safe across documents, and Swift Testing runs tests in parallel; the
+/// Indexer itself reads PDFs from one thread, so nothing is given up.
+@Suite(.serialized) struct LinuxPDFTests {
     let folder: URL = {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("DigUpTests-\(UUID().uuidString)")
         try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)

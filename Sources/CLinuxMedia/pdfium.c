@@ -8,6 +8,7 @@
 #include <fpdfview.h>
 #include <fpdf_text.h>
 #include <fpdf_doc.h>
+#include <pthread.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -15,12 +16,12 @@ struct DigupPdfDoc {
     FPDF_DOCUMENT document;
 };
 
+static pthread_once_t pdfium_once = PTHREAD_ONCE_INIT;
+
+/// pdfium's library init is one call for the process, and not thread-safe to make; the tests run in parallel,
+/// so the first call in whatever thread gets there does it for everyone.
 static void ensure_pdfium(void) {
-    static int ready = 0;   // the readers run on one thread at a time
-    if (!ready) {
-        FPDF_InitLibrary();
-        ready = 1;
-    }
+    pthread_once(&pdfium_once, FPDF_InitLibrary);
 }
 
 DigupPdfDoc *digup_pdf_open(const char *path, int *out_status) {
