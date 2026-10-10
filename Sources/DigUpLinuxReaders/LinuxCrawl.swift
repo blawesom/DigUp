@@ -24,6 +24,7 @@ extension Rules {
             return .index(.doc)
         }
         if imageExtensions.contains(ext) { return .index(isScreenshot(url) ? .screenshot : .image) }
+        if ext == "pdf" { return .index(.pdf) }
         if audioExtensions.contains(ext) { return .index(.audio) }
         if movieExtensions.contains(ext) { return .index(.video) }
         if codeExtensions.contains(ext) { return options.includeCode ? .index(.doc) : .skip("code or data file") }

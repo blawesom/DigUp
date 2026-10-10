@@ -63,6 +63,28 @@ int digup_audio_windows(const char *path, double window, double hop, double mini
 int digup_video_keyframes(const char *path, double every, int max_pixel, int max_frames, const char *folder,
                           DigupMediaPiece **out_pieces, int *out_count, double *out_duration, int *out_has_audio);
 
+// MARK: PDFs (pdfium, in Vendor/pdfium)
+
+/// An open pdfium document. Freed with `digup_pdf_close`.
+typedef struct DigupPdfDoc DigupPdfDoc;
+
+/// Opens a PDF. `out_status`: 0 read, 1 password-protected, 2 unreadable (NULL comes back with either).
+DigupPdfDoc *digup_pdf_open(const char *path, int *out_status);
+
+/// The document's page count.
+int digup_pdf_count(DigupPdfDoc *doc);
+
+/// A page's text layer, as malloc'd UTF-16 (the caller frees); empty when the page has none (a scan).
+int digup_pdf_text(DigupPdfDoc *doc, int index, unsigned short **out_text, int *out_length);
+
+/// The document's title from its metadata, as malloc'd UTF-16 (the caller frees); empty when there is none.
+int digup_pdf_title(DigupPdfDoc *doc, unsigned short **out_title, int *out_length);
+
+/// Renders a page fitted into a square of `pixels` as a PNG at `out_path`. 0 on success.
+int digup_pdf_render(DigupPdfDoc *doc, int index, int pixels, const char *out_path);
+
+void digup_pdf_close(DigupPdfDoc *doc);
+
 #ifdef __cplusplus
 }
 #endif
