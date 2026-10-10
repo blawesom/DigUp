@@ -367,6 +367,13 @@ public final class Searcher {
         "ছবি", "স্ক্রিনশট", "ভিডিও", "ফাইল", "পিডিএফ",
         "في", "من", "على", "الى", "عن", "مع", "هذا", "هذه", "ذلك", "التي", "الذي", "اين", "ما",
         "صورة", "صور", "لقطة", "شاشة", "فيديو", "ملف", "مستند",
+        // French, with accents as `normalized` keeps them and without, as they're often typed. Words that
+        // are English too ("son", "ton") stay out; "on", "a", "the"… are already above.
+        "le", "la", "les", "des", "un", "une", "du", "au", "aux", "et", "est", "sont", "etait", "était",
+        "etaient", "étaient", "je", "tu", "il", "elle", "nous", "vous", "ils", "elles", "ne", "pas",
+        "plus", "moins", "tres", "très", "avec", "dans", "pour", "sur", "sous", "qui", "que", "quoi",
+        "ou", "où", "comment", "pourquoi", "quand", "combien", "quel", "quelle", "quels", "quelles",
+        "mon", "ma", "mes", "sa", "ses", "notre", "votre", "leur", "leurs",
     ]
 
     /// The content words of a query, normalized as keyword search keeps its text (`SearchText`). Kind words
@@ -405,6 +412,12 @@ public final class Searcher {
         "গান": .audio, "রেকর্ডিং": .audio,
         "لقطة": .screenshot, "صورة": .image, "صور": .image, "مستند": .doc, "ملاحظات": .doc, "فيديو": .video,
         "مقطع": .video, "صوت": .audio, "تسجيل": .audio, "اغنية": .audio,
+        // French, accented as `normalized` keeps the word and without, as it's often typed
+        "vidéo": .video, "vidéos": .video, "film": .video, "films": .video,
+        "capture": .screenshot, "écran": .screenshot, "ecran": .screenshot,
+        "dessin": .image, "peinture": .image,
+        "texte": .doc, "textes": .doc,
+        "enregistrement": .audio, "voix": .audio, "chanson": .audio, "musique": .audio,
     ]
 
     /// Kinds the query asks for ("…in a video", "screenshot of…", "ভিডিওতে"): a soft boost, not a filter. Bengali

@@ -29,6 +29,14 @@ import Testing
         #expect(Searcher.kindHints("صورة حمار وحشي") == [.image])
     }
 
+    @Test func frenchQueriesDropTheirFunctionWordsAndHintTheirKinds() {
+        #expect(Searcher.terms("où est le chien") == ["chien"])
+        #expect(Searcher.terms("la vidéo du chien qui dort") == ["vidéo", "chien", "dort"])
+        #expect(Searcher.kindHints("capture d'écran") == [.screenshot])
+        #expect(Searcher.kindHints("vidéo du chien") == [.video])
+        #expect(Searcher.terms("the dog is sleeping") == ["dog", "sleeping"])   // English: nothing new dropped
+    }
+
     @Test func bengaliAndArabicWordsStayWhole() throws {
         let store = try IndexStore(directory: folder)
         let id = try store.insert(Candidate(path: "/notes/trip.txt", kind: .doc, size: 1, mtime: 1, inode: 1, device: 1))
