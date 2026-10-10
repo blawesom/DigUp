@@ -134,10 +134,14 @@ public final class Searcher {
         // Words: FTS5 with Porter stemming over file names, folder names, OCR, page and document text. A name from code
         // ("quantize_row_q8_0_ref") is matched as one phrase, as it's written.
         let terms = Self.terms(text)
+        // A French query's words match in every form they take, so they're marked in the text that way too.
+        let french = SearchText.isFrench(text)
+        let marking = french ? terms.flatMap { SearchText.frenchForms($0) ?? [$0] } : terms
         let identifier = isCode ? CodeLookup.identifier(text) : nil
         var words: [(file: Int64, segment: Int64, snippet: String?)] = []
         var coverage: [Int64: Double] = [:]   // share of the query's words found anywhere in the file
-        let patterns = identifier.map { [CodeLookup.phrase($0)] } ?? Self.patterns(terms, prefixLast: prefixLast)
+        let patterns = identifier.map { [CodeLookup.phrase($0)] }
+            ?? Self.patterns(terms, prefixLast: prefixLast, french: french)
         if !patterns.isEmpty {
             var seen = Set<Int64>()
             try store.db.query("""
@@ -148,7 +152,7 @@ public final class Searcher {
                 let file = row.int(0)
                 guard words.count < 100, allowed(file), seen.insert(file).inserted else { return }
                 // Text that normalizing changed is quoted as it's written (with its hamza, harakat, joiners).
-                let snippet = row.text(3).flatMap { SearchText.snippet($0, terms: terms) } ?? row.text(2)
+                let snippet = row.text(3).flatMap { SearchText.snippet($0, terms: marking) } ?? row.text(2)
                 words.append((file, row.int(1), snippet))
             }
             if !words.isEmpty {
@@ -387,9 +391,14 @@ public final class Searcher {
     }
 
     /// FTS5 patterns for the query's words: quoted, and as prefixes for the last word while it's being typed and for
-    /// words of languages that attach endings (`SearchText.inflects`).
-    static func patterns(_ terms: [String], prefixLast: Bool) -> [String] {
+    /// words of languages that attach endings (`SearchText.inflects`). A French query's words match in every form
+    /// they take (`SearchText.frenchForms`): porter's endings are English's, so without them a verb's tenses stay
+    /// apart. Each term is one pattern, a family joined by OR, so word coverage counts a word found in any form.
+    static func patterns(_ terms: [String], prefixLast: Bool, french: Bool = false) -> [String] {
         terms.enumerated().map { index, term in
+            if french, let forms = SearchText.frenchForms(term) {
+                return forms.map { "\"\($0)\"" }.joined(separator: " OR ")
+            }
             let prefix = (prefixLast && index == terms.count - 1) || SearchText.inflects(term)
             return "\"\(term)\"" + (prefix ? "*" : "")
         }
@@ -399,7 +408,7 @@ public final class Searcher {
     public static func ftsQuery(_ text: String, prefixLast: Bool = false) -> String? {
         let words = terms(text)
         guard !words.isEmpty else { return nil }
-        return patterns(words, prefixLast: prefixLast).joined(separator: " OR ")
+        return patterns(words, prefixLast: prefixLast, french: SearchText.isFrench(text)).joined(separator: " OR ")
     }
 
     static let kindWords: [String: FileKind] = [

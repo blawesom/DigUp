@@ -37,6 +37,42 @@ import Testing
         #expect(Searcher.terms("the dog is sleeping") == ["dog", "sleeping"])   // English: nothing new dropped
     }
 
+    @Test func frenchVerbsMatchInEveryTense() {
+        // porter's endings are English's: without French forms, a verb's tenses stay apart (validated against
+        // SQLite on 2026-10-10 — "chercher" matched only itself, not cherchait, cherché or cherchions)
+        #expect(SearchText.isFrench("où est le chien") == true)
+        #expect(SearchText.isFrench("nous cherchons le chien") == true)
+        #expect(SearchText.isFrench("the dog is sleeping") == false)
+        let query = Searcher.ftsQuery("chercher le chien")
+        #expect(query?.contains("\"chercher\"") == true)
+        #expect(query?.contains("\"cherchait\"") == true)
+        #expect(query?.contains("\"cherché\"") == true)
+        #expect(query?.contains("\"chien\"") == true)
+        #expect(query?.contains("\"chien\"*") == false)
+        // English queries stay as porter leaves them
+        #expect(Searcher.ftsQuery("payment error") == "\"payment\" OR \"error\"")
+        // Words that don't inflect, and stems too short to strip, match as written
+        #expect(SearchText.frenchForms("chien") == nil)
+        #expect(SearchText.frenchForms("avion") == nil)
+        #expect(SearchText.frenchForms("cher") == nil)
+        // Plurals in -x find their singular; -ger verbs keep their inserted e; -yer verbs their turned y
+        #expect(SearchText.frenchForms("chevaux") == ["cheval", "chevals", "chevaux"])
+        #expect(SearchText.frenchForms("bateaux") == ["bateau", "bateaux"])
+        #expect(SearchText.frenchForms("manger")?.contains("mangeait") == true)
+        #expect(SearchText.frenchForms("envoyer")?.contains("envoie") == true)
+    }
+
+    @Test func frenchVerbTensesFindEachOther() throws {
+        let store = try IndexStore(directory: folder)
+        let id = try store.insert(Candidate(path: "/notes/voyage.txt", kind: .doc, size: 1, mtime: 1, inode: 1, device: 1))
+        try store.addSegment(file: id, kind: .chunk, modality: .text, loc: 1,
+                             text: "Nous avons cherché un hôtel près de la gare, et après une longue marche nous l'avons trouvé.")
+        let searcher = try Searcher(store: store, loadVectors: false)
+        #expect(try searcher.search("chercher l'hôtel", queryVector: nil).map(\.path) == ["/notes/voyage.txt"])
+        #expect(try searcher.search("où nous cherchions", queryVector: nil).map(\.path) == ["/notes/voyage.txt"])
+        #expect(try searcher.search("sleeping", queryVector: nil).isEmpty)   // English: no expansion, no match
+    }
+
     @Test func bengaliAndArabicWordsStayWhole() throws {
         let store = try IndexStore(directory: folder)
         let id = try store.insert(Candidate(path: "/notes/trip.txt", kind: .doc, size: 1, mtime: 1, inode: 1, device: 1))

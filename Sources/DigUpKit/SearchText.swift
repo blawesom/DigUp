@@ -30,6 +30,77 @@ public enum SearchText {
         word.unicodeScalars.contains { Script.indic.contains($0.value) || Script.arabic.contains($0.value) }
     }
 
+    /// Whether a query is in French, so that its words match however they're inflected (`frenchForms`): it has
+    /// French accents, or one of French's own function words. FTS5's porter stemmer is built for English: it
+    /// matches English's inflections (payment finds payments) but leaves French verb tenses apart (chercher
+    /// matched only chercher, not cherchait or cherché; checked against SQLite on 2026-10-10), so French needs
+    /// forms of its own — and English queries must not get them, or their words would strip to stems that
+    /// aren't English ("water" → "wat*"). Accents and function words are how a query says it's French; one of
+    /// French content words alone (no accents, no function words) doesn't expand, and matches as written.
+    /// Another Latin language can pass for French (Spanish with é): its words then get French forms too, which
+    /// are whole words that match nothing — harmless.
+    public static func isFrench(_ text: String) -> Bool {
+        let lowered = normalized(text).lowercased()
+        if lowered.contains(where: { "àâçéèêëîïôùûœ".contains($0) }) { return true }
+        return !Set(lowered.components(separatedBy: CharacterSet.alphanumerics.inverted))
+            .isDisjoint(with: frenchWords)
+    }
+
+    /// French function words, as `normalized` and lowercasing leave them (accents kept) and without, as they're
+    /// often typed. For `isFrench`; the common ones double as stopwords (`Searcher.stopwords`). Words that are
+    /// English too ("on", "son", "ton") stay out, or every English query would read as French.
+    static let frenchWords: Set<String> = [
+        "le", "la", "les", "des", "un", "une", "du", "au", "aux", "et", "est", "sont", "etait", "était",
+        "etaient", "étaient", "je", "tu", "il", "elle", "nous", "vous", "ils", "elles", "ne", "pas",
+        "plus", "moins", "tres", "très", "avec", "dans", "pour", "sur", "sous", "qui", "que", "quoi",
+        "ou", "où", "comment", "pourquoi", "quand", "combien", "quel", "quelle", "quels", "quelles",
+        "mon", "ma", "mes", "sa", "ses", "notre", "votre", "leur", "leurs",
+    ]
+
+    /// The forms a French word matches in: the word itself, and the conjugations and plurals of its stem, each
+    /// whole — a form that isn't a word matches nothing. -er and -ir verbs (the two big classes) come out in
+    /// every tense; -ger and -cer verbs keep their inserted e (manger → mangeait), -yer verbs their turned y
+    /// (envoyer → envoie), plurals in -x find their singular (chevaux → cheval, bateaux → bateau). Left out:
+    /// -re verbs (prendre, mettre — their ending is also a noun's, voiture), irregular stems (va, pris) and
+    /// noun plurals in -s (porter already matches them), which match as written; and stems shorter than three
+    /// letters, where over-stripping starts ("cher" is not "ch"). Nil when there's nothing to strip.
+    public static func frenchForms(_ word: String) -> [String]? {
+        if word.hasSuffix("eaux"), word.count >= 5 {
+            return [word, String(word.dropLast())].sorted()
+        }
+        if word.hasSuffix("aux"), word.count >= 5 {
+            let base = String(word.dropLast(3))
+            return [word, base + "al", base + "als"].sorted()
+        }
+        let strippable = ["issaient", "issais", "issait", "issant", "aient", "ait", "ais", "ant",
+                          "ées", "és", "ée", "ent", "ions", "iez", "ons", "ez", "er", "ir", "é", "e"]
+        let endings = ["er", "e", "es", "é", "ée", "és", "ées", "ai", "ais", "ait", "aient", "ant", "ent",
+                       "ions", "iez", "ons", "ez", "ir", "i", "is", "it",
+                       "issant", "issait", "issais", "issaient", "issons", "issez", "isse", "isses",
+                       "issent", "issions", "issiez"]
+        for ending in strippable.sorted(by: { $0.count > $1.count }) {
+            guard word.hasSuffix(ending), word.count - ending.count >= 3 else { continue }
+            let stem = String(word.dropLast(ending.count))
+            var forms: Set<String> = [word]
+            for ending in endings { forms.insert(stem + ending) }
+            // -ger and -cer verbs insert an e before an ending that starts with a, o or é
+            if stem.hasSuffix("g") || stem.hasSuffix("c") {
+                for ending in ["ait", "aient", "ai", "ais", "ant", "ons", "é", "ée", "és", "ées"] {
+                    forms.insert(stem + "e" + ending)
+                }
+            }
+            // -yer verbs turn their y to i before an ending that starts with e
+            if stem.hasSuffix("y") {
+                let turned = String(stem.dropLast()) + "i"
+                for ending in ["e", "es", "é", "ée", "és", "ées", "ait", "aient", "ais"] {
+                    forms.insert(turned + ending)
+                }
+            }
+            return forms.sorted()
+        }
+        return nil
+    }
+
     /// Whether text says something in words: at least a fifth of what isn't space is letters (marks count, such as
     /// Bengali vowel signs). A data dump or a table of numbers isn't, and gets keyword search only: a meaning vector of
     /// digits matches nothing anyone would describe. On the testbed (2026-10-09) real pages and chunks had 30% letters
