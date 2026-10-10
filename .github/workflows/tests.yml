@@ -1,0 +1,63 @@
+# The two platforms the engine runs on today, each guarded by its own tests: macOS (Metal, Apple's readers —
+# the Mac's side of the split) and Linux (CPU, its own readers). The model is cached for the reference-vector
+# test; everything else builds from the checkout.
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  macos:
+    name: macOS (Metal, Apple's readers)
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - name: llama.cpp, Metal
+        run: scripts/build-llama.sh
+      - name: The model, cached
+        uses: actions/cache@v4
+        with:
+          key: model-bfcd298762cc34d0357ece5ebdd31791a3a374d8
+          path: ~/Library/Application Support/DigUp/Models
+      - name: The model, fetched when the cache missed
+        run: |
+          cd "$HOME/Library/Application Support/DigUp/Models" 2>/dev/null || {
+            mkdir -p "$HOME/Library/Application Support/DigUp/Models"
+            cd "$HOME/Library/Application Support/DigUp/Models"
+          }
+          for file in embeddinggemma-2-Q8_0.gguf mmproj-embeddinggemma-2-Q8_0.gguf; do
+            [ -f "$file" ] || curl -sfL -o "$file" \
+              "https://huggingface.co/ggml-org/embeddinggemma-2-GGUF/resolve/bfcd298762cc34d0357ece5ebdd31791a3a374d8/$file"
+          done
+      - name: Test
+        run: swift test
+
+  linux:
+    name: Linux (CPU, its own readers)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: The readers' libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake ffmpeg libavformat-dev libavcodec-dev libavutil-dev libswscale-dev libswresample-dev \
+            libarchive-dev libheif-dev libexif-dev \
+            libtesseract-dev tesseract-ocr tesseract-ocr-eng tesseract-ocr-fra
+      - name: Swift 6.4
+        run: |
+          curl -sL https://download.swift.org/swift-6.4.0-release/ubuntu2404/swift-6.4.0-RELEASE/swift-6.4.0-RELEASE-ubuntu24.04.tar.gz \
+            | tar xz -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/swift-6.4.0-RELEASE-ubuntu24.04/usr/bin" >> "$GITHUB_PATH"
+      - name: pdfium
+        run: scripts/fetch-pdfium.sh
+      - name: llama.cpp, CPU
+        run: scripts/build-llama.sh
+      - name: Test
+        run: swift test

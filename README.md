@@ -138,6 +138,26 @@ There's also a command-line tool, `.build/release/digup`, that indexes, searches
 (`digup --help`). `scripts/make-testbed.sh` builds a folder of test files to try it on (it needs ffmpeg), and `evals/`
 holds the queries ranking changes are measured with.
 
+### On Linux
+
+The command-line tool builds and runs there too — tested on Arch and Ubuntu 24.04. You'll need Swift 6.2 or
+later (a swift.org toolchain untarred anywhere works), git, CMake, and the readers' libraries: ffmpeg
+(libavformat, libavcodec, libavutil, libswscale, libswresample), libarchive, libheif, libexif, and tesseract
+with at least its English data (`tesseract-ocr-eng`; add `-fra` to read French screenshots). Then:
+
+```sh
+git clone https://github.com/ARahim3/DigUp && cd DigUp
+scripts/fetch-pdfium.sh            # pdfium, prebuilt, into Vendor/ (out of git)
+scripts/build-llama.sh             # llama.cpp for the CPU, into Vendor/ (a few minutes)
+swift build -c release && swift test
+.build/release/digup index ~/some-folder && .build/release/digup search "what you're looking for"
+```
+
+The model goes in `$DIGUP_MODELS`, `~/.local/share/DigUp/Models`, or the Hugging Face cache: the two Q8_0
+files from [ggml-org/embeddinggemma-2-GGUF](https://huggingface.co/ggml-org/embeddinggemma-2-GGUF) at
+revision `bfcd298`. Everything runs on the CPU today; the Vulkan backend for small GPUs is the next phase.
+The same tests run in CI on both platforms (`.github/workflows/tests.yml`).
+
 ## FAQ
 
 **How is this different from Spotlight?** Spotlight finds files by their names, text and metadata. DigUp also finds
