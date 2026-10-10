@@ -1,3 +1,4 @@
+import DigUpCore
 import Foundation
 
 public enum IndexerError: Error, CustomStringConvertible {

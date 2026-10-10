@@ -1,5 +1,4 @@
 import Foundation
-import UniformTypeIdentifiers
 
 public enum Classification: Equatable, Sendable {
     case index(FileKind)
@@ -22,10 +21,11 @@ public enum Rules {
     ]
     static let projectBundleExtensions: Set<String> = ["xcodeproj", "xcworkspace"]
 
-    static let docExtensions: Set<String> = ["txt", "text", "md", "markdown", "rtf", "docx", "doc", "odt", "html", "htm"]
+    /// Documents the main index reads, by extension.
+    public static let docExtensions: Set<String> = ["txt", "text", "md", "markdown", "rtf", "docx", "doc", "odt", "html", "htm"]
 
     /// Source code and data files: off by default (your editor and ripgrep search them better, and they flood an index).
-    static let codeExtensions: Set<String> = [
+    public static let codeExtensions: Set<String> = [
         "py", "ipynb", "c", "h", "cc", "cpp", "cxx", "hpp", "hh", "m", "mm", "swift", "tsx", "cts", "js", "jsx", "mjs",
         "cjs", "go", "rs", "java", "kt", "kts", "scala", "rb", "php", "cs", "fs", "sh", "bash", "zsh", "fish", "ps1",
         "lua", "pl", "r", "jl", "dart", "sql", "vue", "svelte", "css", "scss", "sass", "less", "json", "jsonl", "yaml",
@@ -85,7 +85,7 @@ public enum Rules {
     }
 
     /// Keys, certificates, password and credential files: never read, wherever they are.
-    static func isSecret(_ name: String) -> Bool {
+    public static func isSecret(_ name: String) -> Bool {
         let lower = name.lowercased()
         let secretTypes: Set<String> = ["pem", "key", "p12", "pfx", "keystore", "jks", "ppk", "kdbx", "gpg", "asc",
                                         "crt", "cer", "der", "p8", "mobileprovision"]
@@ -95,7 +95,7 @@ public enum Rules {
     }
 
     /// Why code search doesn't go into a folder (`codeSkippedFolderNames`), or nil.
-    static func codeSkipReason(forFolder url: URL) -> String? {
+    public static func codeSkipReason(forFolder url: URL) -> String? {
         if codeSkippedFolderNames.contains(url.lastPathComponent) { return "vendored or built code" }
         // A submodule or a worktree (".git" is a file there): someone else's code, or a copy of a repo's own.
         var isFolder: ObjCBool = false
@@ -105,29 +105,8 @@ public enum Rules {
         return nil
     }
 
-    public static func classify(_ url: URL, type: UTType?, options: IndexOptions) -> Classification {
-        let ext = url.pathExtension.lowercased()
-        if options.excludedExtensions.contains(ext) { return .skip("excluded type") }
-        // .ts / .mts are usually TypeScript, which Spotlight calls MPEG-2 video. Only a real transport stream is video.
-        if ext == "ts" || ext == "mts" || ext == "m2ts" {
-            if isMPEGTransportStream(url) { return .index(.video) }
-            return options.includeCode ? .index(.doc) : .skip("code or data file")
-        }
-        if docExtensions.contains(ext) { return .index(.doc) }
-        if codeExtensions.contains(ext) { return options.includeCode ? .index(.doc) : .skip("code or data file") }
-        guard let type else { return .ignore }
-        if type.conforms(to: .sourceCode) || type.conforms(to: .script) {
-            return options.includeCode ? .index(.doc) : .skip("code or data file")
-        }
-        if type.conforms(to: .pdf) { return .index(.pdf) }
-        if type.conforms(to: .image) { return .index(isScreenshot(url) ? .screenshot : .image) }
-        if type.conforms(to: .movie) { return .index(.video) }
-        if type.conforms(to: .audio) { return .index(.audio) }
-        return .ignore
-    }
-
     /// MPEG-TS packets start with 0x47 every 188 bytes (or every 192 with a 4-byte timecode, as in .m2ts / AVCHD .mts).
-    static func isMPEGTransportStream(_ url: URL) -> Bool {
+    public static func isMPEGTransportStream(_ url: URL) -> Bool {
         guard let handle = try? FileHandle(forReadingFrom: url) else { return false }
         defer { try? handle.close() }
         guard let data = try? handle.read(upToCount: 600), data.count >= 400 else { return false }
@@ -137,13 +116,16 @@ public enum Rules {
     }
 
     /// macOS marks screenshots with an extended attribute that survives moves and copies; names are the fallback.
+    /// (The attribute is macOS's; on Linux the name prefixes decide, until its readers add a marker of their own.)
     public static func isScreenshot(_ url: URL) -> Bool {
+        #if canImport(Darwin)
         if getxattr(url.path, "com.apple.metadata:kMDItemIsScreenCapture", nil, 0, 0, 0) > 0 { return true }
+        #endif
         let name = url.lastPathComponent
         return screenshotPrefixes.contains { name.hasPrefix($0) }
     }
 
-    static func skipReason(forFolder url: URL, home: String, excluded: [String]) -> String? {
+    public static func skipReason(forFolder url: URL, home: String, excluded: [String]) -> String? {
         let name = url.lastPathComponent
         if skippedFolderNames.contains(name) { return "developer folder" }
         if name.hasSuffix(".noindex") { return ".noindex folder" }
@@ -152,7 +134,7 @@ public enum Rules {
         return nil
     }
 
-    static func isProjectRoot(_ folder: String) -> Bool {
+    public static func isProjectRoot(_ folder: String) -> Bool {
         guard let names = try? FileManager.default.contentsOfDirectory(atPath: folder) else { return false }
         let set = Set(names)
         return projectMarkers.contains(where: set.contains)
@@ -171,8 +153,8 @@ public enum Rules {
 
     /// Folders with hundreds of same-kind, machine-named media files: training data, not your stuff.
     /// They're skipped (and reported) instead of being indexed silently. Roots you pick yourself are never datasets.
-    static func datasetFolders(_ files: [(folder: String, stem: String, kind: FileKind)], roots: Set<String>,
-                               minimum: Int = 300) -> [String: Int] {
+    public static func datasetFolders(_ files: [(folder: String, stem: String, kind: FileKind)], roots: Set<String>,
+                                      minimum: Int = 300) -> [String: Int] {
         var groups: [String: [String]] = [:]
         for file in files where [.image, .audio, .video].contains(file.kind) && !roots.contains(file.folder) {
             groups["\(file.folder)\u{0}\(file.kind.rawValue)", default: []].append(file.stem)

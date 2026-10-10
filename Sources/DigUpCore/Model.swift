@@ -27,6 +27,45 @@ public enum SegmentKind: String, Sendable {
     case cells            // a stretch of a notebook: loc to loc_end are its first and last cells, from 1
 }
 
+/// Why a file couldn't be read, or was left out once read (shared by every extractor).
+public enum ExtractError: Error, CustomStringConvertible {
+    case unreadable(String)
+    case tooSmall(Int, Int)
+    case locked
+    case empty(String)
+    /// Not for the index after all, once read (code that a program made, or that holds a private key).
+    case leftOut(String)
+
+    public var description: String {
+        switch self {
+        case .unreadable(let why): "unreadable: \(why)"
+        case .tooSmall(let width, let height): "small image \(width)×\(height)"
+        case .locked: "password-protected"
+        case .empty(let why): why
+        case .leftOut(let why): why
+        }
+    }
+}
+
+/// A file the crawler decided to index.
+public struct Candidate: Sendable {
+    public let path: String
+    public let kind: FileKind
+    public let size: Int64
+    public let mtime: Double
+    public let inode: UInt64
+    public let device: UInt64
+
+    public init(path: String, kind: FileKind, size: Int64, mtime: Double, inode: UInt64, device: UInt64) {
+        self.path = path
+        self.kind = kind
+        self.size = size
+        self.mtime = mtime
+        self.inode = inode
+        self.device = device
+    }
+}
+
 /// What produced a segment's vector. Scores are normalized per modality because text vectors score higher than
 /// image or audio vectors for the same topic (measured: 0.75–0.86 vs 0.67–0.78).
 public enum Modality: String, Sendable, CaseIterable {
@@ -77,7 +116,9 @@ public struct IndexOptions: Sendable {
         }.filter { !$0.isEmpty })
     }
 
-    var fingerprint: String {
+    /// The index's content signature: anything that changes vectors or keyword text. An index never mixes
+    /// fingerprints, so the whole index is read again when it changes.
+    public var fingerprint: String {
         // "code1": how code is read (stretches of lines, the path in its repo as the title). A change to it is a new
         // number, and every code index is read again.
         if code { return "code1 lines\(codeStretch)" }

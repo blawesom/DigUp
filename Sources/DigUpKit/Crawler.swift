@@ -1,15 +1,6 @@
+import DigUpCore
 import Foundation
 import UniformTypeIdentifiers
-
-/// A file the crawler decided to index.
-public struct Candidate: Sendable {
-    public let path: String
-    public let kind: FileKind
-    public let size: Int64
-    public let mtime: Double
-    public let inode: UInt64
-    public let device: UInt64
-}
 
 public struct CrawlReport: Sendable {
     public var candidates: [Candidate] = []
@@ -244,5 +235,31 @@ enum GitFiles {
         process.waitUntilExit()
         guard process.terminationStatus == 0 else { return nil }
         return Set(data.split(separator: 0).compactMap { String(data: Data($0), encoding: .utf8) })
+    }
+}
+
+extension Rules {
+    /// What the main index does with a file, from what macOS says its type is (the crawler reads the type from
+    /// the file's resources; the core `Rules` decides by extension and name alone). `.ts` / `.mts` are usually
+    /// TypeScript, which Spotlight calls MPEG-2 video: only a real transport stream is video.
+    static func classify(_ url: URL, type: UTType?, options: IndexOptions) -> Classification {
+        let ext = url.pathExtension.lowercased()
+        if options.excludedExtensions.contains(ext) { return .skip("excluded type") }
+        // .ts / .mts are usually TypeScript, which Spotlight calls MPEG-2 video. Only a real transport stream is video.
+        if ext == "ts" || ext == "mts" || ext == "m2ts" {
+            if isMPEGTransportStream(url) { return .index(.video) }
+            return options.includeCode ? .index(.doc) : .skip("code or data file")
+        }
+        if docExtensions.contains(ext) { return .index(.doc) }
+        if codeExtensions.contains(ext) { return options.includeCode ? .index(.doc) : .skip("code or data file") }
+        guard let type else { return .ignore }
+        if type.conforms(to: .sourceCode) || type.conforms(to: .script) {
+            return options.includeCode ? .index(.doc) : .skip("code or data file")
+        }
+        if type.conforms(to: .pdf) { return .index(.pdf) }
+        if type.conforms(to: .image) { return .index(isScreenshot(url) ? .screenshot : .image) }
+        if type.conforms(to: .movie) { return .index(.video) }
+        if type.conforms(to: .audio) { return .index(.audio) }
+        return .ignore
     }
 }

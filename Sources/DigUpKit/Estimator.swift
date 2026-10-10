@@ -1,5 +1,6 @@
 import CoreGraphics
 import CoreServices
+import DigUpCore
 import Foundation
 
 /// Seconds of indexing per unit, measured 2026-10-07 on an M4 Pro with llama.cpp (Q8_0), reading files while the

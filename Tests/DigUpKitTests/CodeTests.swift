@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 @testable import DigUpKit
+@testable import DigUpCore
 
 /// The code index: what's read in code folders, how code is cut into stretches of lines, and where it ends up.
 @Suite final class CodeTests {

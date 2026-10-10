@@ -4,29 +4,29 @@ import Foundation
 /// into whole cells) that the model reads one at a time, each knowing where it is, so that a result opens there.
 public enum CodeExtractor {
     /// A stretch of a file: its text, and its first and last lines (or cells), from 1.
-    struct Piece: Sendable, Equatable {
-        let text: String
-        let first: Int
-        let last: Int
+    public struct Piece: Sendable, Equatable {
+        public let text: String
+        public let first: Int
+        public let last: Int
     }
 
-    struct File: Sendable {
-        let pieces: [Piece]
+    public struct File: Sendable {
+        public let pieces: [Piece]
         /// For the model, the file's title: its path in its repo ("payments/retry.py" in the "billing" repo reads
         /// "billing/payments/retry.py"), which says more about code than its name alone (2026-10-09, the real-code
         /// eval: the file name alone had 22 vs 24 of 27 in the top 5, MRR 0.69 vs 0.79).
-        let title: String
+        public let title: String
         /// The repo (or code project) it's in, if any.
-        let repo: String?
-        let lines: Int
+        public let repo: String?
+        public let lines: Int
         /// A notebook's cells (code and notes; outputs are never read). Nil for anything else.
-        let cells: Int?
+        public let cells: Int?
     }
 
     /// The model reads 2,048 tokens of an input at most; a single line longer than this is cut here.
     static let longestPiece = 4000
 
-    static func read(_ url: URL, options: IndexOptions) throws -> File {
+    public static func read(_ url: URL, options: IndexOptions) throws -> File {
         let data = try Data(contentsOf: url)
         let (repo, title) = place(of: url.path)
         if url.pathExtension.lowercased() == "ipynb" {
@@ -74,7 +74,7 @@ public enum CodeExtractor {
     /// when it can, where the code does: before a line that starts a new block at the left margin, or after a blank
     /// line, in its last 60%. One that had to stop in the middle of a block hands its last two lines on to the next,
     /// so whatever spans the cut is read whole once.
-    static func lines(_ text: String, size: Int = 1800) -> [Piece] {
+    public static func lines(_ text: String, size: Int = 1800) -> [Piece] {
         // Swift reads "\r\n" as one character: both end a line, as they do in an editor.
         var lines = text.split(omittingEmptySubsequences: false, whereSeparator: { $0 == "\n" || $0 == "\r\n" })
         if lines.last?.isEmpty == true { lines.removeLast() }   // the final newline
@@ -127,7 +127,7 @@ public enum CodeExtractor {
 
     /// A stretch in one line, for result lists: its first line that defines something ("def retry_with_backoff(…"),
     /// else its first line of code (not a comment, an import or a closing brace).
-    static func summary(_ text: String) -> String {
+    public static func summary(_ text: String) -> String {
         let lines = text.split(whereSeparator: { $0 == "\n" || $0 == "\r\n" })
             .map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
         let definition = lines.first { line in

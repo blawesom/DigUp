@@ -252,7 +252,8 @@ public final class IndexStore {
     }
 
     /// Extract and embed the file again, as it is (after a better way to read it arrived).
-    func requeue(_ id: Int64) throws {
+    /// Puts a file back in the queue, as it is (to be read again after its text came out garbled).
+    public func requeue(_ id: Int64) throws {
         try deleteSegments(of: id, keepingName: true)
         try db.run("UPDATE files SET state = 'pending', detail = NULL, info = NULL, indexed_at = NULL WHERE id = ?",
                    [.int(id)])
@@ -352,7 +353,8 @@ public final class IndexStore {
     }
 
     /// The last page or chunk stored for a file (where a long file's reading got to, when its info doesn't say).
-    func lastPlace(of id: Int64) throws -> Int? {
+    /// The last place a long file got to (its pages or chunks), to go on from.
+    public func lastPlace(of id: Int64) throws -> Int? {
         var last: Int?
         try db.query("SELECT MAX(loc) FROM segments WHERE file = ? AND kind IN ('page', 'page_image', 'chunk')",
                      [.int(id)]) { last = $0.isNull(0) ? nil : Int($0.double(0)) }

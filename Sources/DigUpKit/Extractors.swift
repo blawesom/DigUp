@@ -1,28 +1,10 @@
 import AppKit
+import DigUpCore
 import Foundation
 import ImageIO
 import PDFKit
 import UniformTypeIdentifiers
 import Vision
-
-enum ExtractError: Error, CustomStringConvertible {
-    case unreadable(String)
-    case tooSmall(Int, Int)
-    case locked
-    case empty(String)
-    /// Not for the index after all, once read (code that a program made, or that holds a private key).
-    case leftOut(String)
-
-    var description: String {
-        switch self {
-        case .unreadable(let why): "unreadable: \(why)"
-        case .tooSmall(let width, let height): "small image \(width)×\(height)"
-        case .locked: "password-protected"
-        case .empty(let why): why
-        case .leftOut(let why): why
-        }
-    }
-}
 
 enum ImageExtractor {
     struct Prepared: Sendable {
@@ -243,11 +225,4 @@ enum DocExtractor {
         }
         return chunks
     }
-}
-
-/// One line, at most `limit` characters: for result lists.
-func excerpt(_ text: String, limit: Int = 240) -> String {
-    let line = text.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
-        .trimmingCharacters(in: .whitespaces)
-    return line.count > limit ? String(line.prefix(limit)) + "…" : line
 }
