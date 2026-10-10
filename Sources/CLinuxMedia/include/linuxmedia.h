@@ -19,6 +19,13 @@ int digup_image_dimensions(const char *path, int *width, int *height);
 // 0 on success, -1 when it can't be decoded.
 int digup_decode_image(const char *path, int max_pixel, uint8_t **out_pixels, int *width, int *height);
 
+// The same, for HEIC and AVIF (a phone's photos), which ffmpeg can't be relied on to read: libheif decodes,
+// with the orientation its metadata says. 0 on success, -1 when it can't be decoded.
+int digup_decode_heif(const char *path, int max_pixel, uint8_t **out_pixels, int *width, int *height);
+
+// The HEIC or AVIF image's dimensions, from its handle (nothing decoded). 0 on success, -1 when it can't be read.
+int digup_heif_dimensions(const char *path, int *width, int *height);
+
 // EXIF DateTimeOriginal as the camera wrote it ("2024:05:01 10:12:13"). 0 on success, -1 when there is none.
 int digup_exif_taken(const char *path, char *out, int out_size);
 

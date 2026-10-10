@@ -28,7 +28,7 @@ targets += [
     .systemLibrary(name: "CLibArchive", path: "Sources/CLibArchive"),
     .target(name: "CLinuxMedia",
             linkerSettings: [.unsafeFlags(["-lavformat", "-lavcodec", "-lavutil", "-lswscale",
-                                           "-lexif", "-ltesseract"])]),
+                                           "-lheif", "-lexif", "-ltesseract"])]),
     .target(name: "DigUpLinuxReaders", dependencies: ["DigUpCore", "CLibArchive", "CLinuxMedia"]),
     .testTarget(name: "LinuxReadersTests", dependencies: ["DigUpLinuxReaders", "CLinuxMedia"]),
 ]

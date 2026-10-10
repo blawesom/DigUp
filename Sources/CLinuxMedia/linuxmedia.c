@@ -10,6 +10,8 @@
 #include <libavcodec/avcodec.h>
 #include <libswscale/swscale.h>
 
+#include <libheif/heif.h>
+
 #include <libexif/exif-data.h>
 #include <libexif/exif-content.h>
 #include <libexif/exif-entry.h>
@@ -189,6 +191,85 @@ int digup_decode_image(const char *path, int max_pixel, uint8_t **out_pixels, in
     *out_pixels = rgb;
     *width = target_w;
     *height = target_h;
+    return 0;
+}
+
+// MARK: HEIC and AVIF
+
+/// Scales a packed RGB24 buffer (with `stride`) into a fresh malloc'd buffer at most `max_pixel` on its
+/// longest side — the shared resize of the image readers. NULL when libswscale declines.
+static uint8_t *resized_rgb(const uint8_t *plane, int stride, int source_w, int source_h, int max_pixel,
+                            int *out_w, int *out_h) {
+    const double scale = (source_w > max_pixel || source_h > max_pixel)
+        ? (double)max_pixel / (source_w > source_h ? source_w : source_h) : 1.0;
+    const int target_w = (int)(source_w * scale), target_h = (int)(source_h * scale);
+    struct SwsContext *sws = sws_getContext(source_w, source_h, AV_PIX_FMT_RGB24, target_w, target_h,
+                                             AV_PIX_FMT_RGB24, SWS_BILINEAR, NULL, NULL, NULL);
+    if (!sws) return NULL;
+    uint8_t *out = malloc((size_t)target_w * target_h * 3);
+    if (out) {
+        const uint8_t *sources[4] = { plane, NULL, NULL, NULL };
+        const int strides[4] = { stride, 0, 0, 0 };
+        uint8_t *targets[4] = { out, NULL, NULL, NULL };
+        const int target_strides[4] = { target_w * 3, 0, 0, 0 };
+        sws_scale(sws, sources, strides, 0, source_h, targets, target_strides);
+    }
+    sws_freeContext(sws);
+    *out_w = target_w;
+    *out_h = target_h;
+    return out;
+}
+
+int digup_heif_dimensions(const char *path, int *width, int *height) {
+    heif_context *context = heif_context_alloc();
+    if (!context) return -1;
+    if (heif_context_read_from_file(context, path, NULL).code != heif_error_Ok) {
+        heif_context_free(context);
+        return -1;
+    }
+    heif_image_handle *handle = NULL;
+    if (heif_context_get_primary_image_handle(context, &handle).code != heif_error_Ok) {
+        heif_context_free(context);
+        return -1;
+    }
+    *width = heif_image_handle_get_width(handle);
+    *height = heif_image_handle_get_height(handle);
+    heif_image_handle_release(handle);
+    heif_context_free(context);
+    return *width > 0 && *height > 0 ? 0 : -1;
+}
+
+int digup_decode_heif(const char *path, int max_pixel, uint8_t **out_pixels, int *width, int *height) {
+    heif_context *context = heif_context_alloc();
+    if (!context) return -1;
+    if (heif_context_read_from_file(context, path, NULL).code != heif_error_Ok) {
+        heif_context_free(context);
+        return -1;
+    }
+    heif_image_handle *handle = NULL;
+    if (heif_context_get_primary_image_handle(context, &handle).code != heif_error_Ok) {
+        heif_context_free(context);
+        return -1;
+    }
+    heif_image *image = NULL;
+    if (heif_decode_image(handle, &image, heif_colorspace_RGB, heif_chroma_interleaved_RGB, NULL).code
+        != heif_error_Ok) {
+        heif_image_handle_release(handle);
+        heif_context_free(context);
+        return -1;
+    }
+    const int source_w = heif_image_get_width(image, heif_channel_interleaved);
+    const int source_h = heif_image_get_height(image, heif_channel_interleaved);
+    int stride = 0;
+    const uint8_t *plane = heif_image_get_plane_readonly(image, heif_channel_interleaved, &stride);
+    // Orientation comes with the EXIF metadata (this libheif has no handle API for it): a follow-up, with
+    // reading when the photo was taken from the same place.
+    uint8_t *out = plane ? resized_rgb(plane, stride, source_w, source_h, max_pixel, width, height) : NULL;
+    heif_image_release(image);
+    heif_image_handle_release(handle);
+    heif_context_free(context);
+    if (!out) return -1;
+    *out_pixels = out;
     return 0;
 }
 

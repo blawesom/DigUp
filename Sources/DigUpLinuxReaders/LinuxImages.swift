@@ -7,21 +7,27 @@ import Glibc
 #endif
 
 /// Images on Linux, behind the same interface the Mac's ImageExtractor fills: ffmpeg decodes (JPEG, PNG, WebP,
-/// GIF, BMP, TIFF) and resizes into the model's budget, stb_image_write writes the scratch copy, libexif says
-/// when the camera took it, and tesseract reads the words on a screenshot. `CLinuxMedia` is the C side of it.
+/// GIF, BMP, TIFF) and resizes into the model's budget, libheif reads HEIC and AVIF (a phone's photos),
+/// stb_image_write writes the scratch copy, libexif says when the camera took it, and tesseract reads the words
+/// on a screenshot. `CLinuxMedia` is the C side of it.
 enum LinuxImages {
+    /// HEIC and AVIF, which ffmpeg can't be relied on to read: libheif does.
+    private static let heifExtensions: Set<String> = ["heic", "heif", "avif"]
+
     /// A downscaled copy for the model, written into `folder` (PNG for screenshots, JPEG otherwise). The
     /// dimensions are the original's, as the Mac's extractor reports them.
     static func prepare(_ url: URL, maxPixel: Int, minSide: Int, to folder: URL, png: Bool) throws -> ReadImage {
+        let heif = heifExtensions.contains(url.pathExtension.lowercased())
         var width: Int32 = 0, height: Int32 = 0
-        guard digup_image_dimensions(url.path, &width, &height) == 0 else {
-            throw ExtractError.unreadable("not an image")
-        }
+        let probed = heif ? digup_heif_dimensions(url.path, &width, &height)
+            : digup_image_dimensions(url.path, &width, &height)
+        guard probed == 0 else { throw ExtractError.unreadable("not an image") }
         guard max(width, height) >= Int32(minSide) else { throw ExtractError.tooSmall(Int(width), Int(height)) }
         var pixels: UnsafeMutablePointer<UInt8>?
         var scaledWidth: Int32 = 0, scaledHeight: Int32 = 0
-        guard digup_decode_image(url.path, Int32(maxPixel), &pixels, &scaledWidth, &scaledHeight) == 0,
-              let pixels else {
+        let decoded = heif ? digup_decode_heif(url.path, Int32(maxPixel), &pixels, &scaledWidth, &scaledHeight)
+            : digup_decode_image(url.path, Int32(maxPixel), &pixels, &scaledWidth, &scaledHeight)
+        guard decoded == 0, let pixels else {
             throw ExtractError.unreadable("can't decode image")
         }
         defer { free(pixels) }

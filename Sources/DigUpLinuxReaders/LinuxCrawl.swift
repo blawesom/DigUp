@@ -28,9 +28,9 @@ extension Rules {
         return .ignore
     }
 
-    /// What ffmpeg decodes as a still image (HEIC and AVIF wait for libheif, which reads them directly).
+    /// What ffmpeg decodes as a still image, and libheif besides (a phone's HEIC and AVIF photos).
     static let imageExtensions: Set<String> = [
-        "jpg", "jpeg", "jfif", "png", "webp", "gif", "bmp", "tif", "tiff",
+        "jpg", "jpeg", "jfif", "png", "webp", "gif", "bmp", "tif", "tiff", "heic", "heif", "avif",
     ]
 }
 

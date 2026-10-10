@@ -48,6 +48,25 @@ import Testing
         }
     }
 
+    @Test func heicPhotosAreDecoded() throws {
+        // A phone's format: heif-enc turns the photo into one, and libheif reads it back
+        let photo = try ffmpeg(["-f", "lavfi", "-i", "testsrc2=s=1280x960:d=1", "-frames:v", "1"], name: "photo.jpg")
+        let heic = folder.appendingPathComponent("phone.heic")
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/heif-enc")
+        process.arguments = ["-q", "80", "-o", heic.path, photo.path]
+        process.standardError = FileHandle.nullDevice
+        try process.run()
+        process.waitUntilExit()
+        try #require(process.terminationStatus == 0, "heif-enc failed")
+
+        let prepared = try LinuxImages.prepare(heic, maxPixel: 1024, minSide: 256, to: folder, png: false)
+        #expect(prepared.width == 1280 && prepared.height == 960)   // the original's, as on the Mac
+        var width: Int32 = 0, height: Int32 = 0
+        #expect(digup_image_dimensions(prepared.path, &width, &height) == 0)
+        #expect(width == 1024 && height == 768)
+    }
+
     @Test func screenshotsAreReadAndSearched() throws {
         // tesseract's data, committed with the tests (the system may not have it installed)
         let tessdata = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
