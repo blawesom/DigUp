@@ -52,8 +52,9 @@ public final class LlamaEmbedder: Embedder {
         guard textOnly || models.media != nil else {
             throw WorkerError.notFound("\(LlamaModels.mediaFile) (images and audio) isn't downloaded yet")
         }
+        let gpu = Self.gpuPlan(textOnly: textOnly, models: models)
         var modelParams = llama_model_default_params()
-        modelParams.n_gpu_layers = 999
+        modelParams.n_gpu_layers = gpu.layers
         guard let model = llama_model_load_from_file(models.text.path, modelParams) else {
             throw WorkerError.failed("can't load \(models.text.path)")
         }
@@ -75,7 +76,7 @@ public final class LlamaEmbedder: Embedder {
         var media: OpaquePointer?
         if let mediaFile = models.media, !textOnly {
             var mediaParams = mtmd_context_params_default()
-            mediaParams.use_gpu = true
+            mediaParams.use_gpu = gpu.encoders
             mediaParams.print_timings = false
             mediaParams.warmup = true
             mediaParams.image_min_tokens = 1      // never rescale: images arrive at their final size (ImageSizing)
@@ -109,7 +110,7 @@ public final class LlamaEmbedder: Embedder {
         info = WorkerInfo(model: info.model, revision: info.revision, runtime: info.runtime, dtype: info.dtype,
                           dim: info.dim, textOnly: textOnly, loadSeconds: seconds)
         LlamaLog.shared.line("ready in \(seconds) s (\(textOnly ? "text-only" : "full"), llama.cpp \(Self.buildTag), "
-                             + "vectors \(Self.vectorVersion))")
+                             + "vectors \(Self.vectorVersion), \(gpu.note))")
     }
 
     deinit { close() }
@@ -302,6 +303,41 @@ public final class LlamaEmbedder: Embedder {
         mtmd_helper_log_set(LlamaLog.callback, LlamaLog.userData)
         llama_backend_init()
     }()
+
+    /// How much of the model goes on the GPU: everything when there's room for it (a 16 GB card barely
+    /// notices this one), a share of the layers when there isn't (the layers a small card holds are layers
+    /// the CPU doesn't run), and none without a GPU to put it on. The weights are the text model (~310 MB)
+    /// plus the image and audio encoders (~555 MB) unless this is the query encoder; the compute buffers
+    /// want room besides. An integrated GPU shares the machine's memory, so its answer is whatever it says
+    /// it has free of that.
+    static func gpuPlan(textOnly: Bool, models: LlamaModels) -> (layers: Int32, encoders: Bool, note: String) {
+        guard let device = ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_GPU)
+                ?? ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_IGPU) else {
+            return (0, false, "the CPU")
+        }
+        let name = String(cString: ggml_backend_dev_name(device))
+        var free: UInt = 0, total: UInt = 0
+        ggml_backend_dev_memory(device, &free, &total)
+        let weights = Int(textOnly ? ModelFiles.text.bytes : ModelFiles.text.bytes + ModelFiles.media.bytes)
+        return gpuDecision(free: free, weights: weights, name: name)
+    }
+
+    /// The plan, given what's free: the part the tests can cover without a small GPU to try it on. A layer
+    /// is about a thirtieth of the text model's bytes for this architecture — a rough share, and llama.cpp
+    /// places what fits where the estimate was off. The encoders go on the GPU only when everything does:
+    /// they're half the weight, and a card that can't hold the whole model runs them faster on the CPU.
+    static func gpuDecision(free: UInt, weights: Int, name: String) -> (layers: Int32, encoders: Bool, note: String) {
+        let megabytes = Int(free) >> 20
+        let reserve = 420 << 20   // the compute buffers, with room to spare
+        guard free > UInt(reserve) else { return (0, false, "the CPU (\(name) has \(megabytes) MB free)") }
+        if free >= UInt(weights + reserve) {
+            return (999, true, "\(name), \(megabytes) MB free")
+        }
+        let perLayer = Double(ModelFiles.text.bytes) / 30
+        let layers = Int32((Double(free) - Double(reserve)) / perLayer)
+        guard layers > 0 else { return (0, false, "the CPU (\(name) has \(megabytes) MB free)") }
+        return (min(layers, 999), false, "\(name), \(megabytes) MB free, \(layers) of the model's layers")
+    }
 }
 
 /// A problem with one input (it gets no vector; its neighbours go on).
